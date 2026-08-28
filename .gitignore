@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# Additional
+.env
+venv/
+__pycache__/
+*.pyc
+node_modules/
+*.gguf
+qdrant_storage/
+
+REFERENCE FRONTEND COMPONENTS

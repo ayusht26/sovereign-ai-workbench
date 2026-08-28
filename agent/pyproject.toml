@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sovereignai"
+version = "0.1.0"
+description = "Air-gapped, multi-model, agentic AI workbench for confidential industrial/government work"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "SovereignAI Team" }]
+keywords = ["ai", "llm", "ollama", "air-gapped", "tui", "agent"]
+
+dependencies = [
+    # TUI
+    "textual>=0.85.0",
+    "rich>=13.9.0",
+    # CLI
+    "typer>=0.12.0",
+    # Config
+    "pyyaml>=6.0.2",
+    # Ollama client
+    "ollama>=0.3.3",
+    # Vector DB (RAG)
+    "chromadb>=0.5.23",
+    # Office file generation
+    "python-docx>=1.1.2",
+    "python-pptx>=1.0.2",
+    "openpyxl>=3.1.5",
+    # PDF handling
+    "pymupdf>=1.24.13",
+    "pdf2image>=1.17.0",
+    # Network monitoring
+    "psutil>=6.1.0",
+    # Docker SDK
+    "docker>=7.1.0",
+    # Image handling for vision tool
+    "Pillow>=11.0.0",
+    # Date/time utilities
+    "python-dateutil>=2.9.0",
+    # Watchdog for KB watch mode
+    "watchdog>=5.0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "mypy>=1.13.0",
+    "ruff>=0.7.0",
+]
+
+[project.scripts]
+sovai = "sovereignai.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/internal/sovereignai"
+Repository = "https://github.com/internal/sovereignai"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sovereignai"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
