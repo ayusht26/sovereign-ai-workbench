@@ -26,16 +26,17 @@
 
 Install these once, before anything else:
 
-| Tool | Purpose | Install |
-|------|---------|---------|
-| **Python 3.11+** | Runtime | [python.org](https://python.org) |
-| **Ollama** | Local LLM server | [ollama.com/download](https://ollama.com/download) |
-| **Docker** | Code sandbox | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop) |
+| Tool             | Purpose          | Install                                                                              |
+| ---------------- | ---------------- | ------------------------------------------------------------------------------------ |
+| **Python 3.11+** | Runtime          | [python.org](https://python.org)                                                     |
+| **Ollama**       | Local LLM server | [ollama.com/download](https://ollama.com/download)                                   |
+| **Docker**       | Code sandbox     | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop) |
 
 > **Windows users:** Install via the Windows installers above. All commands below work in PowerShell.  
 > **Linux users:** Use the package manager (`apt`, `dnf`, `pacman`) for Python and Docker; curl-install Ollama.
 
 Verify prerequisites are working:
+
 ```bash
 python --version    # should show 3.11+
 ollama --version    # should show 0.3+
@@ -49,18 +50,21 @@ docker info         # should not error
 ### Option A — Automated (recommended)
 
 **Linux/macOS:**
+
 ```bash
 cd agent/
 bash scripts/install.sh
 ```
 
 **Windows (PowerShell as Administrator):**
+
 ```powershell
 cd agent\
 .\scripts\install.ps1
 ```
 
 The script will:
+
 1. Create a Python virtual environment at `agent/.venv`
 2. Install SovereignAI and all Python dependencies
 3. Pull all 5 required Ollama models (~14GB)
@@ -156,39 +160,39 @@ sovai --workspace /data/projects/unit-4
 
 ### Keyboard Shortcuts
 
-| Key | Action |
-|-----|--------|
-| `Enter` | Submit message |
-| `Ctrl+P` | Open command palette |
-| `Esc` | Interrupt current generation |
-| `Ctrl+N` | New session |
+| Key      | Action                       |
+| -------- | ---------------------------- |
+| `Enter`  | Submit message               |
+| `Ctrl+P` | Open command palette         |
+| `Esc`    | Interrupt current generation |
+| `Ctrl+N` | New session                  |
 
 ### Slash Commands (type in the input box)
 
-| Command | What it does |
-|---------|-------------|
-| `/models` | Open model selection palette |
-| `/auto` | Switch back to AUTO model selection |
-| `/net` | Open live network monitor |
-| `/new` | Start a new session |
-| `/sessions` | Browse past sessions |
-| `/kb status` | Show knowledge base statistics |
+| Command          | What it does                            |
+| ---------------- | --------------------------------------- |
+| `/models`        | Open model selection palette            |
+| `/auto`          | Switch back to AUTO model selection     |
+| `/net`           | Open live network monitor               |
+| `/new`           | Start a new session                     |
+| `/sessions`      | Browse past sessions                    |
+| `/kb status`     | Show knowledge base statistics          |
 | `/kb add <path>` | Ingest a folder into the knowledge base |
-| `/cwd <path>` | Change the workspace directory |
-| `/help` | Show all commands |
+| `/cwd <path>`    | Change the workspace directory          |
+| `/help`          | Show all commands                       |
 
 ### AUTO Mode
 
 By default, SovereignAI is in `AUTO` mode. Every message is classified by the tiny resident router model (`llama3.2:3b`) into one of 6 categories, and the right worker model is loaded automatically:
 
-| Category | Model used |
-|----------|-----------|
-| General (Q&A, drafting, summaries) | `qwen3.5:9b` |
-| Coding (write/fix/debug code) | `qwen2.5-coder:7b` |
-| Vision (images, scanned PDFs) | `qwen2.5vl:7b` |
+| Category                             | Model used                  |
+| ------------------------------------ | --------------------------- |
+| General (Q&A, drafting, summaries)   | `qwen3.5:9b`                |
+| Coding (write/fix/debug code)        | `qwen2.5-coder:7b`          |
+| Vision (images, scanned PDFs)        | `qwen2.5vl:7b`              |
 | Spreadsheet (xlsx, financial tables) | `qwen3.5:9b` + `sheet_tool` |
-| Document Q&A (SOPs, manuals) | `qwen3.5:9b` + `rag_search` |
-| Planning (multi-step tasks) | `qwen3.5:9b` + all tools |
+| Document Q&A (SOPs, manuals)         | `qwen3.5:9b` + `rag_search` |
+| Planning (multi-step tasks)          | `qwen3.5:9b` + all tools    |
 
 The routing decision is always shown above each response (dim text):  
 `→ routed to coding (qwen2.5-coder:7b) · 0.91 confidence`
@@ -196,6 +200,7 @@ The routing decision is always shown above each response (dim text):
 ### Watching the Agent Work
 
 When the agent performs multi-step tasks, you'll see live:
+
 - **`+ Thought: Xms`** — collapsible block of the model's reasoning (click to expand)
 - **`🔧 Tool: sandbox_exec`** — tool call in progress (args shown, spinner active)
 - **`✅ Success`** — tool completed (result shown, auto-collapsed)
@@ -270,8 +275,9 @@ Supported formats: `.pdf` (text-layer and scanned), `.docx`, `.txt`, `.md`, `.em
 ### Querying
 
 Just ask naturally. The agent automatically uses `rag_search` for document Q&A:
-> *"What does SOP-114 say about valve torque limits?"*  
-> *"Find all correspondence about the Unit-4 compressor failure."*
+
+> _"What does SOP-114 say about valve torque limits?"_  
+> _"Find all correspondence about the Unit-4 compressor failure."_
 
 The response will cite sources: **"Per SOP-114 §3.2, the maximum torque is…"**
 
@@ -302,7 +308,7 @@ Find the `models:` section:
 ```yaml
 models:
   general:
-    model: "qwen3.5:9b"       # ← change this tag
+    model: "qwen3.5:9b" # ← change this tag
     fallback: "llama3.1:8b"
   coding:
     model: "qwen2.5-coder:7b"
@@ -316,11 +322,11 @@ After editing, just restart `sovai` — no code changes needed.
 
 ### Upgrade path (hardware tiers)
 
-| Hardware | General | Coding | Vision |
-|----------|---------|--------|--------|
-| 8GB VRAM (this default) | `qwen3.5:9b` | `qwen2.5-coder:7b` | `qwen2.5vl:7b` |
-| 24GB single GPU | `qwen3.6:27b` | `qwen3-coder:30b` | `qwen2.5vl:32b` |
-| Multi-GPU server | `llama3.3:70b` | `qwen3-coder:30b` | `qwen2.5vl:72b` |
+| Hardware                | General        | Coding             | Vision          |
+| ----------------------- | -------------- | ------------------ | --------------- |
+| 8GB VRAM (this default) | `qwen3.5:9b`   | `qwen2.5-coder:7b` | `qwen2.5vl:7b`  |
+| 24GB single GPU         | `qwen3.6:27b`  | `qwen3-coder:30b`  | `qwen2.5vl:32b` |
+| Multi-GPU server        | `llama3.3:70b` | `qwen3-coder:30b`  | `qwen2.5vl:72b` |
 
 **Changing a row in the YAML table is the entire upgrade procedure.**
 
@@ -377,6 +383,7 @@ This is enforced at two independent layers:
 ### Layer 1 — Application level (always active)
 
 The `net_guard` module polls all network connections every 500ms. Open `/net` in the TUI to see:
+
 - Every connection (process, local addr, remote addr, state)
 - A persistent count of "external connection attempts this session" — should always read **0**
 - An immediate red alert if any external connection is ever detected
@@ -443,9 +450,9 @@ Run these in order with `/net` open on a second pane to prove sovereignty throug
 ### Scenario 1 — Auto model selection
 
 1. Launch `sovai` in AUTO mode
-2. Ask: *"Write a short summary of what air-gapped systems are and why they matter."*
+2. Ask: _"Write a short summary of what air-gapped systems are and why they matter."_
    - Watch routing line: `→ routed to general (qwen3.5:9b)`
-3. Then ask: *"Write a Python function that checks if a file has been modified in the last 24 hours."*
+3. Then ask: _"Write a Python function that checks if a file has been modified in the last 24 hours."_
    - Watch routing line switch: `→ routed to coding (qwen2.5-coder:7b)`
 
 **The headline feature — demonstrated in 2 messages.**
@@ -453,7 +460,7 @@ Run these in order with `/net` open on a second pane to prove sovereignty throug
 ### Scenario 2 — Agentic document generation
 
 1. Attach a scanned inspection report (PDF or image): mention the path in your message
-2. Ask: *"Extract the key findings from this inspection report and draft an approval note as a Word document."*
+2. Ask: _"Extract the key findings from this inspection report and draft an approval note as a Word document."_
 3. Watch the agent:
    - Route to `vision` → extract findings from the image
    - Hand off to `general` model for drafting
@@ -462,7 +469,7 @@ Run these in order with `/net` open on a second pane to prove sovereignty throug
 
 ### Scenario 3 — Coding with sandbox
 
-1. Ask: *"Write a Python script that reads a CSV and calculates the average of the 'value' column. Include a deliberate off-by-one bug. Then find and fix the bug and show tests passing."*
+1. Ask: _"Write a Python script that reads a CSV and calculates the average of the 'value' column. Include a deliberate off-by-one bug. Then find and fix the bug and show tests passing."_
 2. Watch the agent:
    - Write the code via `fs_write`
    - Run it in Docker sandbox via `sandbox_exec` → failing output shown
@@ -472,16 +479,18 @@ Run these in order with `/net` open on a second pane to prove sovereignty throug
 ### Scenario 4 — Multimodal (vision)
 
 1. Drop in a photograph of a handwritten note or a P&ID diagram
-2. Ask: *"What is the tag number of the valve in the top-right of this diagram?"*
+2. Ask: _"What is the tag number of the valve in the top-right of this diagram?"_
 3. Watch it route to `vision`, send the image to `qwen2.5vl:7b`, and answer grounded in the actual image
 
 ### Scenario 5 — Sovereignty proof
 
 After all the above:
+
 ```bash
 # In a separate terminal:
 bash scripts/verify_airgap.sh
 ```
+
 All five tests should show `PASS`. The `/net` panel should still show `0 external calls`.
 
 ---
@@ -494,12 +503,12 @@ sovai doctor
 
 This checks and reports exactly what's missing:
 
-| Issue reported | Fix |
-|---------------|-----|
-| Python < 3.11 | Install Python 3.11+ |
-| Ollama not running | `ollama serve` |
-| Model not pulled | `ollama pull <model-tag>` |
-| Docker not running | Start Docker Desktop |
+| Issue reported     | Fix                                |
+| ------------------ | ---------------------------------- |
+| Python < 3.11      | Install Python 3.11+               |
+| Ollama not running | `ollama serve`                     |
+| Model not pulled   | `ollama pull <model-tag>`          |
+| Docker not running | Start Docker Desktop               |
 | Config dir missing | Created automatically on first run |
 
 Run `sovai doctor` again after each fix until it shows all green.
@@ -597,5 +606,4 @@ sovai
 
 ---
 
-*SovereignAI — Built for operators who cannot compromise. Everything on this machine, nothing in the cloud.*
-
+_SovereignAI — Built for operators who cannot compromise. Everything on this machine, nothing in the cloud._
