@@ -171,7 +171,7 @@ export default function ChatPage() {
       {/* Sidebar */}
       <aside className="hidden w-64 shrink-0 flex-col border-r border-carbon-lift md:flex">
         <div className="flex h-16 items-center gap-2 border-b border-carbon-lift px-5">
-          <span className="status-pulse h-1.5 w-1.5 rounded-full bg-signal-orange" />
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-signal-orange" />
           <Link to="/" className="eyebrow tracking-[0.22em] text-bone">
             BASTION
           </Link>
@@ -360,7 +360,7 @@ export default function ChatPage() {
 
               {busy && (
                 <div className="flex items-center gap-3">
-                  <span className="status-pulse h-1.5 w-1.5 rounded-full bg-signal-orange" />
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-signal-orange" />
                   <AITextLoading
                     texts={[
                       "Classifying task...",

@@ -22,7 +22,7 @@ export function Footer() {
         <div className="grid gap-12 md:grid-cols-[1.4fr_repeat(3,1fr)]">
           <div>
             <div className="flex items-center gap-2">
-              <span className="status-pulse h-1.5 w-1.5 rounded-full bg-signal-orange" />
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-signal-orange" />
               <span className="eyebrow tracking-[0.22em] text-bone">BASTION</span>
             </div>
             <p className="mt-4 max-w-xs text-body-sm text-warm-granite">
@@ -36,9 +36,18 @@ export function Footer() {
               <ul className="mt-5 space-y-3">
                 {col.items.map((item) => (
                   <li key={item}>
-                    <span className="text-body-sm text-warm-granite transition-colors hover:text-bone">
-                      {item}
-                    </span>
+                    {item === "Contact" ? (
+                      <Link
+                        to="/contact"
+                        className="text-body-sm text-warm-granite transition-colors hover:text-bone"
+                      >
+                        {item}
+                      </Link>
+                    ) : (
+                      <span className="text-body-sm text-warm-granite transition-colors hover:text-bone">
+                        {item}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -51,6 +60,9 @@ export function Footer() {
             © 2026 Bastion Systems — no telemetry, no egress
           </span>
           <div className="flex gap-6">
+            <Link to="/contact" className="text-body-sm text-warm-granite hover:text-bone">
+              Contact
+            </Link>
             <Link to="/login" className="text-body-sm text-warm-granite hover:text-bone">
               Log in
             </Link>

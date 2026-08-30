@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { motion } from "motion/react";
-import { ShieldCheck, Cpu, FileStack, Route as RouteIcon, Lock, Boxes } from "lucide-react";
+import { ShieldCheck, Cpu, FileStack, Route as RouteIcon, Lock, Boxes, Brain, Terminal, ScanEye } from "lucide-react";
 import { Nav } from "@/components/site/nav";
 import { Footer } from "@/components/site/footer";
 import { Reveal, ScrollExpand, ScrollRule, Eyebrow } from "@/components/site/reveal";
@@ -241,9 +241,6 @@ function Home() {
                 <f.icon className="h-5 w-5 text-signal-orange" strokeWidth={1.25} />
                 <h3 className="mt-6 text-body text-bone">{f.title}</h3>
                 <p className="mt-3 text-body-sm text-warm-granite">{f.body}</p>
-                <span className="mt-6 inline-block text-body-sm text-pale-stone transition-colors group-hover:text-chalk">
-                  Read more →
-                </span>
               </div>
             </Reveal>
           ))}
@@ -320,6 +317,7 @@ function Home() {
         <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 justify-items-center">
           <Reveal className="w-full flex justify-center">
             <CardFlip
+              icon={RouteIcon}
               title="Task Router"
               subtitle="Llama3.2-3B · Zero Latency"
               description="Always resident in VRAM. Classifies requests in <40ms into 6 categories at zero temperature."
@@ -334,6 +332,7 @@ function Home() {
           </Reveal>
           <Reveal delay={0.08} className="w-full flex justify-center">
             <CardFlip
+              icon={Brain}
               title="Reasoning Tier"
               subtitle="Qwen3.5-9B · Doc Synthesis"
               description="Formulates multi-step plans, cross-checks SOPs, and drafts formal .docx approval notes."
@@ -348,6 +347,7 @@ function Home() {
           </Reveal>
           <Reveal delay={0.16} className="w-full flex justify-center">
             <CardFlip
+              icon={Terminal}
               title="Coding Sandbox"
               subtitle="Qwen2.5-Coder-7B · Docker"
               description="Generates verified scripts and spreadsheets executed in an isolated network-less container."
@@ -362,6 +362,7 @@ function Home() {
           </Reveal>
           <Reveal delay={0.24} className="w-full flex justify-center">
             <CardFlip
+              icon={ScanEye}
               title="Vision & OCR"
               subtitle="Qwen2.5-VL-7B · Schematics"
               description="Extracts data from degraded plant paperwork, handwritten logs, tables, and blueprints."
@@ -390,7 +391,7 @@ function Home() {
               keys, no outbound calls.
             </p>
             <Link
-              to="/login"
+              to="/contact"
               className="mt-8 inline-flex rounded-[3px] bg-obsidian-canvas px-[14px] py-3 text-body-sm text-bone transition-opacity hover:opacity-90"
             >
               Request a site key

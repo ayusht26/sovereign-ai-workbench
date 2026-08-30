@@ -180,20 +180,6 @@
   border: 1px solid var(--carbon-lift);
 }
 
-@keyframes pulse-dot {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
-@utility status-pulse {
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-
 @keyframes marquee-x {
   from {
     transform: translateX(0);

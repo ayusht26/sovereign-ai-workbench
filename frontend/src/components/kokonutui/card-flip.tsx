@@ -8,7 +8,7 @@
  * @github: https://github.com/kokonut-labs/kokonutui
  */
 
-import { ArrowRight, Repeat2 } from "lucide-react";
+import { ArrowRight, Sparkles, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +19,7 @@ export interface CardFlipProps {
   features?: string[];
   actionLabel?: string;
   className?: string;
+  icon?: LucideIcon | React.ComponentType<{ className?: string }>;
 }
 
 export default function CardFlip({
@@ -28,6 +29,7 @@ export default function CardFlip({
   features = ["UI/UX", "Modern Design", "Tailwind CSS", "Kokonut UI"],
   actionLabel = "Inspect tier",
   className,
+  icon: Icon,
 }: CardFlipProps) {
   const [isFlipped, setIsFlipped] = useState(false);
 
@@ -109,10 +111,17 @@ export default function CardFlip({
                     "bg-gradient-to-br from-signal-orange/20 via-signal-orange/10 to-transparent",
                   )}
                 />
-                <Repeat2
-                  aria-hidden="true"
-                  className="relative z-10 h-4 w-4 text-signal-orange transition-transform duration-300 group-hover/icon:-rotate-12 group-hover/icon:scale-110"
-                />
+                {Icon ? (
+                  <Icon
+                    aria-hidden="true"
+                    className="relative z-10 h-4 w-4 text-signal-orange transition-transform duration-300 group-hover/icon:scale-110"
+                  />
+                ) : (
+                  <Sparkles
+                    aria-hidden="true"
+                    className="relative z-10 h-4 w-4 text-signal-orange transition-transform duration-300 group-hover/icon:scale-110"
+                  />
+                )}
               </div>
             </div>
           </div>

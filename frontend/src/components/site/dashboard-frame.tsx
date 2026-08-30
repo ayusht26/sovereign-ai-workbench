@@ -44,7 +44,7 @@ export function DashboardFrame() {
           <span className="h-2.5 w-2.5 rounded-full bg-graphite-mid" />
         </div>
         <span className="eyebrow text-pale-stone">bastion — runtime monitor</span>
-        <span className="status-pulse ml-auto h-1.5 w-1.5 rounded-full bg-signal-orange" />
+        <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-signal-orange" />
         <span className="eyebrow text-pale-stone">local</span>
       </div>
 

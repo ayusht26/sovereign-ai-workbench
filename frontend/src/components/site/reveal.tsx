@@ -79,7 +79,7 @@ export function Eyebrow({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="status-pulse h-1.5 w-1.5 rounded-full bg-signal-orange" />
+      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-signal-orange" />
       <span
         className={cn("eyebrow", tone === "bone" ? "text-pale-stone" : "text-obsidian-canvas/70")}
       >
