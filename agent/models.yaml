@@ -1,70 +1,143 @@
 # SovereignAI — Default Model Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-# This file maps task categories to Ollama model tags.
+# This file maps task categories to local Ollama models and optional API models.
 # Edit this file to use different models — no code changes needed.
 # Copy to ~/.sovereignai/config.yaml and edit there (takes precedence).
 #
+# PROVIDER:
+#   local → use Ollama models running entirely on-premise
+#   api   → use the configured OpenAI-compatible API provider
+#
+# SECURITY:
+#   - Router ALWAYS runs locally.
+#   - Embeddings ALWAYS run locally.
+#   - API keys are read from environment variables and never stored here.
+#
 # UPGRADE PATH:
 #   8GB VRAM (this default)  → see models.* below
-#   24GB single GPU          → swap general→qwen3.6:27b, coding→qwen3-coder:30b, vision→qwen2.5vl:32b
-#   Multi-GPU server         → swap general→llama3.3:70b, coding→qwen3-coder:30b, vision→qwen2.5vl:72b
+#   24GB single GPU          → swap local general→qwen3.6:27b,
+#                              coding→qwen3-coder:30b,
+#                              vision→qwen2.5vl:32b
+#   Multi-GPU server         → swap local general→llama3.3:70b,
+#                              coding→qwen3-coder:30b,
+#                              vision→qwen2.5vl:72b
 #
 # The model NAMES (general/coding/vision) never change — only the tags.
 # ─────────────────────────────────────────────────────────────────────────────
 
 hardware_profile: "8gb_vram" # 8gb_vram | 16gb_vram | 24gb_vram | server_multi_gpu
 
-# Router model: kept always-resident, classifies every request (tiny, ~2GB Q4)
+# ─────────────────────────────────────────────────────────────────────────────
+# Provider
+# ─────────────────────────────────────────────────────────────────────────────
+# Administrator switch between completely local inference and an
+# OpenAI-compatible API provider.
+#
+# IMPORTANT:
+#   mode: local → zero external model calls
+#   mode: api   → worker tasks may use the configured API provider
+#
+# The API key itself is NEVER stored in this file.
+# It must exist in the environment variable specified by api_key_env.
+#
+provider:
+  mode: "local" # local | api
+  base_url: "https://openrouter.ai/api/v1"
+  api_key_env: "OPENROUTER_API_KEY"
+  app_url: null # optional HTTP-Referer / application URL
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Router
+# ─────────────────────────────────────────────────────────────────────────────
+# Router ALWAYS runs locally.
+# It classifies every request before selecting a worker model.
+#
+# force_local is intentional: changing provider.mode to "api" must NOT
+# move the router outside the local machine.
+#
 router:
   model: "llama3.2:3b"
-  fallback: "llama3.2:3b" # qwen2.5:0.5b if available and faster on your hardware
-  keep_alive: "-1" # stays resident permanently, it's tiny
+  fallback: "llama3.2:3b"
+  keep_alive: "-1"
   temperature: 0
   max_tokens: 40
 
-# Worker models: one loaded at a time on 8GB cards (auto-swapped by Ollama)
+# ─────────────────────────────────────────────────────────────────────────────
+# Worker models
+# ─────────────────────────────────────────────────────────────────────────────
+# Local:
+#   Ollama model tag used when provider.mode = local.
+#
+# API:
+#   OpenRouter model identifier used when provider.mode = api.
+#
+# Fallback:
+#   Local fallback model. The API provider should not be required for
+#   fallback operation.
+#
 models:
   general:
-    model: "qwen3.5:9b" # best quality/VRAM ratio for chat, summarizing, drafting
-    fallback: "llama3.1:8b" # guaranteed fallback if qwen3.5:9b not pulled
-  coding:
-    model: "qwen2.5-coder:7b" # strongest coding-specific model that fits 8GB cleanly
+    local: "qwen3.5:9b"
+    api: "qwen/qwen3.5-9b"
     fallback: "llama3.1:8b"
-  vision:
-    model: "qwen2.5vl:7b" # best OCR/document/chart understanding at this tier
-    fallback: "llava:7b"
-  embedding:
-    model: "nomic-embed-text" # RAG embeddings, tiny, kept resident alongside router
 
+  coding:
+    local: "qwen2.5-coder:7b"
+    api: "qwen/qwen2.5-coder-7b"
+    fallback: "llama3.1:8b"
+
+  vision:
+    local: "qwen2.5vl:7b"
+    api: "qwen/qwen2.5-vl-7b"
+    fallback: "llava:7b"
+
+  # Embeddings ALWAYS remain local.
+  # RAG data should never need to leave the machine.
+  embedding:
+    model: "nomic-embed-text"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Ollama server settings
+# ─────────────────────────────────────────────────────────────────────────────
 ollama:
-  host: "http://127.0.0.1:11434" # NEVER change this to a non-loopback address
-  max_loaded_models: 2 # router + 1 worker; set OLLAMA_MAX_LOADED_MODELS=2
+  host: "http://127.0.0.1:11434"
+  max_loaded_models: 2
   request_timeout_s: 600
 
+# ─────────────────────────────────────────────────────────────────────────────
 # Workspace settings
+# ─────────────────────────────────────────────────────────────────────────────
 workspace:
   # Directories the agent is allowed to read/write (in addition to cwd)
   # Leave empty to restrict to cwd only (recommended for strict deployments)
   allow_list: []
-  # Auto-approve creation of NEW files (no diff preview needed for new files)
+
+  # Auto-approve creation of NEW files
   auto_approve_new_files: true
+
   # Require diff preview before overwriting existing files
   require_diff_preview: true
 
+# ─────────────────────────────────────────────────────────────────────────────
 # Sandbox (Docker code execution)
+# ─────────────────────────────────────────────────────────────────────────────
 sandbox:
   enabled: true
   memory_limit: "2g"
   cpu_limit: 2.0
   timeout_s: 60
-  # Pre-pulled images (must be present on the machine, never pulled at runtime)
+
+  # Pre-pulled images.
+  # Images must already exist on the machine.
+  # They must NEVER be pulled automatically at runtime.
   images:
     python: "python:3.11-slim"
     node: "node:20-slim"
     gcc: "gcc:13"
 
+# ─────────────────────────────────────────────────────────────────────────────
 # Knowledge base
+# ─────────────────────────────────────────────────────────────────────────────
 knowledge_base:
   path: "~/.sovereignai/kb"
   chunk_size_tokens: 500
@@ -72,22 +145,30 @@ knowledge_base:
   max_results: 5
   max_chunk_tokens: 800
 
+# ─────────────────────────────────────────────────────────────────────────────
 # Network guard
+# ─────────────────────────────────────────────────────────────────────────────
 net_guard:
   enabled: true
   poll_interval_ms: 500
-  # Alert if any non-loopback, non-LAN connection is detected
+
+  # Alert if any non-loopback, non-LAN connection is detected.
   allowed_hosts:
     - "127.0.0.1"
     - "localhost"
     - "::1"
 
+# ─────────────────────────────────────────────────────────────────────────────
 # Audit log
+# ─────────────────────────────────────────────────────────────────────────────
 audit:
   path: "~/.sovereignai/audit"
-  # Never redact content from audit log — it is the compliance trail
+
+  # Never redact content from audit log — it is the compliance trail.
   redact_content: false
 
+# ─────────────────────────────────────────────────────────────────────────────
 # Agent loop
+# ─────────────────────────────────────────────────────────────────────────────
 agent:
   max_iterations: 25
