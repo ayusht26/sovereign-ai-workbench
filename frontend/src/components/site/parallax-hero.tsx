@@ -1,10 +1,7 @@
 import { useEffect, useRef } from "react";
-import { Link } from "@tanstack/react-router";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Lenis from "lenis";
-import AITextLoading from "@/components/kokonutui/ai-text-loading";
-import { Eyebrow } from "@/components/site/reveal";
 
 /** The asterisk/compass mark — used as Bastion's logo throughout the site */
 export function BastionMark({
@@ -98,7 +95,7 @@ export function ParallaxHero() {
           <div className="parallax__black-line-overflow" />
 
           <div data-parallax-layers className="parallax__layers">
-            {/* Layer 1 — distant sky / stars  (moves most — 70%) */}
+            {/* Layer 1 — distant sky / stars (moves most — 70%) */}
             <img
               src="https://cdn.prod.website-files.com/671752cd4027f01b1b8f1c7f/6717795be09b462b2e8ebf71_osmo-parallax-layer-3.webp"
               loading="eager"
@@ -116,44 +113,15 @@ export function ParallaxHero() {
               className="parallax__layer-img"
             />
 
-            {/* Layer 3 — hero copy (40%) */}
+            {/* Layer 3 — clean, aesthetic brand name & tagline (40%) */}
             <div data-parallax-layer="3" className="parallax__layer-title">
-              <div className="parallax__content-block">
-                <Eyebrow>local / air-gapped / sovereign</Eyebrow>
-                <h1 className="parallax__title">
-                  Agentic AI that never leaves the building.
+              <div className="parallax__content-block select-none">
+                <h1 className="parallax__brand-title">
+                  BASTION
                 </h1>
-                <p className="parallax__subtitle">
-                  Bastion gives refineries, PSUs and defence-linked manufacturers a Claude-class
-                  assistant that plans, uses tools and produces real files — entirely inside their
-                  own network.
+                <p className="parallax__brand-tagline">
+                  Sovereign Agentic AI Workbench
                 </p>
-                <div className="parallax__ctas">
-                  <Link
-                    to="/chat"
-                    className="rounded-[3px] bg-chalk px-[14px] py-3 text-body-sm text-obsidian-canvas transition-opacity hover:opacity-90"
-                  >
-                    Open the workbench
-                  </Link>
-                  <Link
-                    to="/login"
-                    className="border border-ash-stroke px-[14px] py-3 text-body-sm text-bone transition-colors hover:border-chalk hover:text-chalk"
-                  >
-                    Sign in to your site →
-                  </Link>
-                </div>
-                <div className="mt-8 flex items-center justify-center gap-3">
-                  <span className="eyebrow text-warm-granite">router</span>
-                  <AITextLoading
-                    texts={[
-                      "Classifying task...",
-                      "Selecting model...",
-                      "Retrieving SOPs...",
-                      "Drafting artifact...",
-                    ]}
-                    className="!text-body-sm !font-normal"
-                  />
-                </div>
               </div>
             </div>
 

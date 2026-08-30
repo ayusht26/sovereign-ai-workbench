@@ -293,45 +293,72 @@ function Home() {
         </div>
       </section>
 
-      {/* Model tiers — flip cards */}
-      <section className="mx-auto max-w-[1200px] px-6 py-24">
+      {/* Model tiers — 3D interactive flip cards */}
+      <section id="models" className="mx-auto max-w-[1200px] px-6 py-24">
         <Reveal>
           <Eyebrow>model tiers</Eyebrow>
           <h2 className="mt-5 max-w-2xl text-heading text-bone">
             Open weights, chosen for you, per task.
           </h2>
+          <p className="mt-4 max-w-xl text-body text-warm-granite">
+            Every request is automatically routed to an on-device open-weight specialist. Zero cloud fallback, zero token egress.
+          </p>
         </Reveal>
-        <div className="mt-14 flex flex-wrap justify-center gap-6 lg:justify-between">
-          <Reveal>
+        <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 justify-items-center">
+          <Reveal className="w-full flex justify-center">
             <CardFlip
-              title="Reasoning tier"
-              subtitle="Qwen3.6-27B · Apache 2.0"
-              description="Long-form synthesis, approval notes, SOP cross-checks."
-              features={["Q4/Q5 on one GPU", "Multilingual", "128K context", "Cited output"]}
+              title="Task Router"
+              subtitle="Llama3.2-3B · Zero Latency"
+              description="Always resident in VRAM. Classifies requests in <40ms into 6 categories at zero temperature."
+              features={[
+                "Resident in VRAM (~2GB)",
+                "0-temp JSON dispatch",
+                "6 routing categories",
+                "Zero cloud telemetry",
+              ]}
+              actionLabel="Always Resident"
             />
           </Reveal>
-          <Reveal delay={0.08}>
+          <Reveal delay={0.08} className="w-full flex justify-center">
             <CardFlip
-              title="Coding tier"
-              subtitle="Qwen3-Coder-Next · 3B active"
-              description="Patches and scripts, executed in a network-less sandbox."
-              features={["256K context", "MoE efficiency", "Test-run loop", "Diff output"]}
+              title="Reasoning Tier"
+              subtitle="Qwen3.5-9B · Doc Synthesis"
+              description="Formulates multi-step plans, cross-checks SOPs, and drafts formal .docx approval notes."
+              features={[
+                "128K context window",
+                "Native .docx / .pptx",
+                "Strict SOP citations",
+                "LangGraph orchestrator",
+              ]}
+              actionLabel="Worker Model"
             />
           </Reveal>
-          <Reveal delay={0.16}>
+          <Reveal delay={0.16} className="w-full flex justify-center">
             <CardFlip
-              title="Vision tier"
-              subtitle="Qwen3-VL · 2B–32B"
-              description="Scanned, skewed and handwritten documents, tables and photos."
-              features={["OCR mode", "Table extraction", "Handwriting", "Degraded scans"]}
+              title="Coding Sandbox"
+              subtitle="Qwen2.5-Coder-7B · Docker"
+              description="Generates verified scripts and spreadsheets executed in an isolated network-less container."
+              features={[
+                "Docker --network=none",
+                "pandas & openpyxl engine",
+                "Code diff preview",
+                "Syntax verification",
+              ]}
+              actionLabel="Worker Model"
             />
           </Reveal>
-          <Reveal delay={0.24}>
+          <Reveal delay={0.24} className="w-full flex justify-center">
             <CardFlip
-              title="Retrieval tier"
-              subtitle="BGE-M3 embeddings"
-              description="Indexes your manuals, SOPs and drawings with citations."
-              features={["Hindi + regional", "Hybrid search", "Chunk provenance", "Local index"]}
+              title="Vision & OCR"
+              subtitle="Qwen2.5-VL-7B · Schematics"
+              description="Extracts data from degraded plant paperwork, handwritten logs, tables, and blueprints."
+              features={[
+                "OmniDocBench OCR mode",
+                "Handwritten shift logs",
+                "Complex table parser",
+                "Local image pipeline",
+              ]}
+              actionLabel="Worker Model"
             />
           </Reveal>
         </div>

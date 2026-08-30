@@ -293,32 +293,26 @@
   align-items: center;
 }
 
-.parallax__title {
-  margin-top: 1rem;
-  font-size: clamp(2.25rem, 5.5vw, 4.5rem);
-  line-height: 1.04;
-  letter-spacing: -0.04em;
+.parallax__brand-title {
+  margin-top: 0.5rem;
+  font-size: clamp(3.25rem, 8.5vw, 7.5rem);
+  line-height: 0.95;
+  letter-spacing: 0.16em;
+  font-weight: 350;
   color: var(--bone);
-  font-weight: 400;
-  text-shadow: 0 2px 48px rgba(0, 0, 0, 0.85), 0 0 80px rgba(0, 0, 0, 0.6);
+  text-transform: uppercase;
+  text-shadow: 0 4px 32px rgba(0, 0, 0, 0.95), 0 0 90px rgba(0, 0, 0, 0.7);
 }
 
-.parallax__subtitle {
+.parallax__brand-tagline {
   margin-top: 1.25rem;
-  max-width: 520px;
-  font-size: 1rem;
-  line-height: 1.5;
-  color: var(--warm-granite);
-  text-shadow: 0 1px 20px rgba(0, 0, 0, 0.9);
-}
-
-.parallax__ctas {
-  margin-top: 2rem;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
+  font-family: var(--font-geist-mono);
+  font-size: clamp(0.8rem, 1.6vw, 1.15rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pale-stone);
+  opacity: 0.85;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.95);
 }
 
 /* Bottom fade — dissolves scene into page canvas */
@@ -365,12 +359,6 @@
   z-index: 25;
 }
 
-/* Scroll spacer — 200vh of scroll distance for the parallax */
-.parallax__scroll-spacer {
-  height: 200vh;
-  background: var(--obsidian-canvas);
-}
-
 /* Content section — revealed after the pin releases */
 .parallax__content {
   display: flex;
@@ -379,4 +367,5 @@
   padding: 6rem 1.5rem;
   background: var(--obsidian-canvas);
 }
+
 
