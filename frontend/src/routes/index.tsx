@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { motion } from "motion/react";
 import { ShieldCheck, Cpu, FileStack, Route as RouteIcon, Lock, Boxes } from "lucide-react";
 import { Nav } from "@/components/site/nav";
@@ -89,6 +90,18 @@ const comparison = [
 ];
 
 function Home() {
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash) {
+      const targetId = window.location.hash.slice(1);
+      const element = document.getElementById(targetId);
+      if (element) {
+        setTimeout(() => {
+          element.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 120);
+      }
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-obsidian-canvas">
       <Nav />
@@ -169,7 +182,7 @@ function Home() {
       </section>
 
       {/* Scroll-expanding product panel */}
-      <section id="product" className="mx-auto max-w-[1200px] px-6 py-24">
+      <section id="product" className="mx-auto max-w-[1200px] px-6 py-24 scroll-mt-20">
         <Reveal className="mx-auto max-w-xl text-center">
           <Eyebrow>the workbench</Eyebrow>
           <h2 className="mt-5 text-heading text-bone md:text-heading-lg">
@@ -214,7 +227,7 @@ function Home() {
       </section>
 
       {/* Feature card row */}
-      <section id="models" className="mx-auto max-w-[1200px] px-6 py-24">
+      <section id="capabilities" className="mx-auto max-w-[1200px] px-6 py-24 scroll-mt-20">
         <Reveal>
           <Eyebrow>capabilities</Eyebrow>
           <h2 className="mt-5 max-w-2xl text-heading text-bone">
@@ -238,7 +251,7 @@ function Home() {
       </section>
 
       {/* Why better than API calls */}
-      <section id="security" className="mx-auto max-w-[1200px] px-6 py-24">
+      <section id="security" className="mx-auto max-w-[1200px] px-6 py-24 scroll-mt-20">
         <div className="grid gap-14 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <Reveal>
             <Eyebrow>vs. a hosted api</Eyebrow>
@@ -294,7 +307,7 @@ function Home() {
       </section>
 
       {/* Model tiers — 3D interactive flip cards */}
-      <section id="models" className="mx-auto max-w-[1200px] px-6 py-24">
+      <section id="models" className="mx-auto max-w-[1200px] px-6 py-24 scroll-mt-20">
         <Reveal>
           <Eyebrow>model tiers</Eyebrow>
           <h2 className="mt-5 max-w-2xl text-heading text-bone">
