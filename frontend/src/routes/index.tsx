@@ -7,6 +7,7 @@ import { Reveal, ScrollExpand, ScrollRule, Eyebrow } from "@/components/site/rev
 import { DashboardFrame } from "@/components/site/dashboard-frame";
 import CardFlip from "@/components/kokonutui/card-flip";
 import AITextLoading from "@/components/kokonutui/ai-text-loading";
+import { ParallaxHero } from "@/components/site/parallax-hero";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -92,14 +93,17 @@ function Home() {
     <div className="min-h-screen bg-obsidian-canvas">
       <Nav />
 
-      {/* Hero */}
-      <section className="mx-auto max-w-[1200px] px-6 pt-32 pb-20 md:pt-40">
+      {/* Parallax Hero */}
+      <ParallaxHero />
+
+      {/* v1 Hero — two-column product intro */}
+      <section className="mx-auto max-w-[1200px] px-6 pt-24 pb-20">
         <div className="grid items-center gap-16 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
           <Reveal>
             <Eyebrow>local / air-gapped / sovereign</Eyebrow>
-            <h1 className="mt-6 text-[2.75rem] leading-[1.05] tracking-[-0.04em] text-bone md:text-display">
+            <h2 className="mt-6 text-[2.75rem] leading-[1.05] tracking-[-0.04em] text-bone md:text-display">
               Agentic AI that never leaves the building.
-            </h1>
+            </h2>
             <p className="mt-6 max-w-md text-body text-warm-granite">
               Bastion gives refineries, PSUs and defence-linked manufacturers a Claude-class
               assistant that plans, uses tools and produces real files — entirely inside their own

@@ -205,3 +205,178 @@
 @utility marquee-track {
   animation: marquee-x 28s linear infinite;
 }
+
+/* ─────────────────────────────────────────────
+   Parallax Hero — faithful Osmo port
+   ───────────────────────────────────────────── */
+
+/*
+  How it works:
+  • .parallax__header is position:sticky so it pins while
+    the user scrolls through .parallax__scroll-spacer (200vh).
+  • data-parallax-layers is the GSAP ScrollTrigger trigger.
+    Because its parent is sticky and fills 100vh, the trigger
+    top is always at viewport-top — scrub: 0 maps the spacer
+    scroll distance to the yPercent animation on each layer.
+  • Each image layer starts at top:-20% and is 140% tall,
+    so yPercent travel never shows a gap.
+*/
+
+.parallax {
+  position: relative;
+}
+
+.parallax__header {
+  height: 100vh;
+  overflow: hidden;
+  background: var(--obsidian-canvas);
+}
+
+.parallax__visuals {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Thin bar masks top-edge image overflow during parallax travel */
+.parallax__black-line-overflow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--obsidian-canvas);
+  z-index: 30;
+}
+
+/* Layers container absolutely fills the visuals area */
+.parallax__layers {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Every image layer: taller than container, starts pulled up */
+.parallax__layer-img {
+  position: absolute;
+  top: -20%;
+  left: 0;
+  width: 100%;
+  height: 140%;
+  object-fit: cover;
+  object-position: center center;
+  will-change: transform;
+  display: block;
+}
+
+/* Title / content layer */
+.parallax__layer-title {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  will-change: transform;
+  z-index: 10;
+}
+
+.parallax__content-block {
+  text-align: center;
+  max-width: 700px;
+  padding: 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.parallax__title {
+  margin-top: 1rem;
+  font-size: clamp(2.25rem, 5.5vw, 4.5rem);
+  line-height: 1.04;
+  letter-spacing: -0.04em;
+  color: var(--bone);
+  font-weight: 400;
+  text-shadow: 0 2px 48px rgba(0, 0, 0, 0.85), 0 0 80px rgba(0, 0, 0, 0.6);
+}
+
+.parallax__subtitle {
+  margin-top: 1.25rem;
+  max-width: 520px;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--warm-granite);
+  text-shadow: 0 1px 20px rgba(0, 0, 0, 0.9);
+}
+
+.parallax__ctas {
+  margin-top: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+/* Bottom fade — dissolves scene into page canvas */
+.parallax__fade {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 260px;
+  background: linear-gradient(to top, var(--obsidian-canvas) 0%, transparent 100%);
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* Top fade — blends Nav cleanly over the scene */
+.parallax__visuals::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 200px;
+  background: linear-gradient(to bottom, var(--obsidian-canvas) 0%, transparent 100%);
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* Signal-orange hairline at bottom edge */
+.parallax__visuals::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--signal-orange) 25%,
+    var(--signal-orange) 75%,
+    transparent 100%
+  );
+  opacity: 0.35;
+  z-index: 25;
+}
+
+/* Scroll spacer — 200vh of scroll distance for the parallax */
+.parallax__scroll-spacer {
+  height: 200vh;
+  background: var(--obsidian-canvas);
+}
+
+/* Content section — revealed after the pin releases */
+.parallax__content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6rem 1.5rem;
+  background: var(--obsidian-canvas);
+}
+

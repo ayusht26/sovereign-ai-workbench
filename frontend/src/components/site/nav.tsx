@@ -5,6 +5,7 @@ import { motion, useScroll, useTransform } from "motion/react";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { BastionMark } from "@/components/site/parallax-hero";
 
 const links = [
   { label: "Product", to: "/" as const, hash: "product" },
@@ -25,8 +26,8 @@ export function Nav() {
       className="fixed top-0 right-0 left-0 z-50 border-b backdrop-blur-[2px]"
     >
       <nav className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-6">
-        <Link to="/" className="flex items-center gap-2">
-          <span className="status-pulse h-1.5 w-1.5 rounded-full bg-signal-orange" />
+        <Link to="/" className="flex items-center gap-2.5">
+          <BastionMark className="h-5 w-5" color="var(--signal-orange)" />
           <span className="eyebrow tracking-[0.22em] text-bone">BASTION</span>
         </Link>
 
