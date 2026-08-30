@@ -5,6 +5,8 @@ import { useState, useEffect } from "react";
 import { Nav } from "@/components/site/nav";
 import { Footer } from "@/components/site/footer";
 import { Eyebrow } from "@/components/site/reveal";
+import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
+import { SlideTextButton } from "@/components/ui/slide-text-button";
 
 export const Route = createFileRoute("/contact")({
   head: () => ({
@@ -171,23 +173,12 @@ export default function ContactPage() {
                     </p>
                   )}
 
-                  <button
+                  <InteractiveHoverButton
                     type="submit"
                     disabled={pending}
-                    className="flex w-full items-center justify-center gap-2 rounded-[3px] bg-obsidian-canvas px-[14px] py-3 text-body-sm text-bone font-medium transition-opacity hover:opacity-90 disabled:opacity-60 cursor-pointer"
-                  >
-                    {pending ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Sending request…</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send className="h-4 w-4 text-signal-orange" />
-                        <span>Request Site Key</span>
-                      </>
-                    )}
-                  </button>
+                    text={pending ? "Sending request…" : "Request Site Key"}
+                    className="w-full rounded-md bg-obsidian-canvas text-bone h-11 hover:border-signal-orange"
+                  />
                 </form>
 
                 <p className="mt-6 text-body-sm text-obsidian-canvas/60">
@@ -228,21 +219,21 @@ export default function ContactPage() {
                 </div>
 
                 <div className="space-y-3 pt-2">
-                  <Link
+                  <InteractiveHoverButton
                     to="/chat"
-                    className="flex w-full items-center justify-center gap-2 rounded-[3px] bg-obsidian-canvas px-[14px] py-3 text-body-sm text-bone transition-opacity hover:opacity-90 font-medium"
-                  >
-                    <span>Launch Workbench Demo</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
+                    text="Launch Workbench Demo"
+                    className="w-full rounded-md bg-obsidian-canvas text-bone h-11"
+                  />
 
-                  <button
-                    type="button"
-                    onClick={handleReset}
-                    className="flex w-full items-center justify-center gap-2 rounded-[3px] border border-obsidian-canvas/20 bg-transparent px-[14px] py-2.5 text-body-sm text-obsidian-canvas hover:bg-obsidian-canvas/5 transition-colors cursor-pointer"
-                  >
-                    <span>Send another message</span>
-                  </button>
+                  <div className="w-full">
+                    <SlideTextButton
+                      type="button"
+                      onClick={handleReset}
+                      text="Send another message"
+                      variant="ghost"
+                      className="w-full rounded-md border border-obsidian-canvas/20 text-obsidian-canvas hover:bg-obsidian-canvas/5 h-10"
+                    />
+                  </div>
                 </div>
               </motion.div>
             )}

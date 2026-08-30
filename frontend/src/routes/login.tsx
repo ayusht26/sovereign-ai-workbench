@@ -4,6 +4,7 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { Nav } from "@/components/site/nav";
 import { Eyebrow } from "@/components/site/reveal";
+import { SlideTextButton } from "@/components/ui/slide-text-button";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -139,14 +140,15 @@ function LoginPage() {
               <p className="font-mono text-caption text-[oklch(0.577_0.2_27)]">› {error}</p>
             )}
 
-            <button
-              type="submit"
-              disabled={pending}
-              className="flex w-full items-center justify-center gap-2 rounded-[3px] bg-obsidian-canvas px-[14px] py-3 text-body-sm text-bone transition-opacity hover:opacity-90 disabled:opacity-60"
-            >
-              {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {pending ? "Verifying on node…" : "Log in"}
-            </button>
+            <div className="w-full">
+              <SlideTextButton
+                type="submit"
+                disabled={pending}
+                text={pending ? "Verifying on node…" : "Log in"}
+                variant="dark"
+                className="w-full h-11 rounded-md font-medium"
+              />
+            </div>
           </form>
 
           <p className="mt-6 text-body-sm text-obsidian-canvas/60">

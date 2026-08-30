@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import AITextLoading from "@/components/kokonutui/ai-text-loading";
 import { cn } from "@/lib/utils";
+import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 
 export const Route = createFileRoute("/chat")({
   head: () => ({
@@ -399,14 +400,13 @@ export default function ChatPage() {
                   <input type="file" className="hidden" />
                   <Paperclip className="h-4 w-4" /> Attach
                 </label>
-                <button
+                <InteractiveHoverButton
                   type="button"
                   onClick={() => send()}
                   disabled={busy || !input.trim()}
-                  className="flex items-center gap-2 rounded-[3px] bg-chalk px-3 py-2 text-body-sm text-obsidian-canvas transition-opacity hover:opacity-90 disabled:opacity-40"
-                >
-                  Run <Send className="h-4 w-4" />
-                </button>
+                  text="Run"
+                  className="rounded-md h-9 min-w-24 px-4 text-xs font-semibold"
+                />
               </div>
             </div>
             <p className="mt-3 eyebrow text-warm-granite">

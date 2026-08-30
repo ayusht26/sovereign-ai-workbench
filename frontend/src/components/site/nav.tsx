@@ -8,6 +8,9 @@ import { cn } from "@/lib/utils";
 import { BastionMark } from "@/components/site/parallax-hero";
 import { HyperText } from "@/components/ui/hyper-text";
 
+import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
+import { SlideTextButton } from "@/components/ui/slide-text-button";
+
 const links = [
   { label: "Product", to: "/" as const, hash: "product" },
   { label: "Security", to: "/" as const, hash: "security" },
@@ -78,18 +81,16 @@ export function Nav() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Link
+          <InteractiveHoverButton
             to="/chat"
-            className="hidden border border-ash-stroke px-4 py-2 text-body-sm text-bone transition-colors hover:border-chalk hover:text-chalk sm:inline-flex"
-          >
-            Open workbench →
-          </Link>
-          <Link
+            text="Open workbench"
+            className="hidden sm:inline-flex h-9 px-4 text-body-sm rounded-md"
+          />
+          <SlideTextButton
             to="/login"
-            className="rounded-[3px] bg-chalk px-[14px] py-2 text-body-sm text-obsidian-canvas transition-opacity hover:opacity-90"
-          >
-            Log in
-          </Link>
+            text="Log in"
+            className="h-9 px-4 rounded-md"
+          />
           <button
             type="button"
             aria-label="Toggle menu"
@@ -123,13 +124,12 @@ export function Nav() {
               {l.label}
             </Link>
           ))}
-          <Link
+          <InteractiveHoverButton
             to="/chat"
+            text="Open workbench"
             onClick={() => setOpen(false)}
-            className="mt-2 inline-flex items-center justify-center border border-ash-stroke px-4 py-2 text-body-sm text-bone transition-colors hover:border-chalk hover:text-chalk"
-          >
-            Open workbench →
-          </Link>
+            className="mt-2 w-full h-10"
+          />
         </div>
       </div>
     </motion.header>

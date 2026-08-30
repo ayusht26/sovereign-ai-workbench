@@ -9,6 +9,8 @@ import { DashboardFrame } from "@/components/site/dashboard-frame";
 import CardFlip from "@/components/kokonutui/card-flip";
 import AITextLoading from "@/components/kokonutui/ai-text-loading";
 import { ParallaxHero } from "@/components/site/parallax-hero";
+import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
+import { SlideTextButton } from "@/components/ui/slide-text-button";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -123,18 +125,16 @@ function Home() {
               network.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
-              <Link
+              <SlideTextButton
                 to="/chat"
-                className="rounded-[3px] bg-chalk px-[14px] py-3 text-body-sm text-obsidian-canvas transition-opacity hover:opacity-90"
-              >
-                Open the workbench
-              </Link>
-              <Link
+                text="Open the workbench"
+                className="h-11 px-5 rounded-md"
+              />
+              <InteractiveHoverButton
                 to="/login"
-                className="border border-ash-stroke px-[14px] py-3 text-body-sm text-bone transition-colors hover:border-chalk hover:text-chalk"
-              >
-                Sign in to your site →
-              </Link>
+                text="Sign in to your site"
+                className="h-11 px-5 min-w-48 text-body-sm rounded-md"
+              />
             </div>
             <div className="mt-10 flex items-center gap-3">
               <span className="eyebrow text-warm-granite">router</span>
@@ -390,12 +390,12 @@ function Home() {
               One workstation for a pilot department, a GPU tier for a full site. No accounts, no
               keys, no outbound calls.
             </p>
-            <Link
+            <SlideTextButton
               to="/contact"
-              className="mt-8 inline-flex rounded-[3px] bg-obsidian-canvas px-[14px] py-3 text-body-sm text-bone transition-opacity hover:opacity-90"
-            >
-              Request a site key
-            </Link>
+              text="Request a site key"
+              variant="dark"
+              className="mt-8 h-11 px-6 rounded-md font-medium"
+            />
           </div>
         </Reveal>
       </section>
