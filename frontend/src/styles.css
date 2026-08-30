@@ -1,0 +1,207 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * FACTORY-style design system — terminal war room.
+ * Dark canvas only. Light cards are the only bright objects.
+ * All colors in oklch.
+ */
+
+@theme inline {
+  --radius-sm: 3px;
+  --radius-md: 3px;
+  --radius-lg: 10px;
+  --radius-xl: 10px;
+  --radius-2xl: 20px;
+  --radius-3xl: 20px;
+  --radius-4xl: 20px;
+
+  --font-sans: var(--font-geist);
+  --font-mono: var(--font-geist-mono);
+
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1;
+  --text-caption--letter-spacing: -0.02em;
+  --text-body-sm: 0.875rem;
+  --text-body-sm--line-height: 1.43;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5;
+  --text-heading: 2.25rem;
+  --text-heading--line-height: 1.1;
+  --text-heading--letter-spacing: -0.031em;
+  --text-heading-lg: 2.75rem;
+  --text-heading-lg--line-height: 1.12;
+  --text-heading-lg--letter-spacing: -0.025em;
+  --text-display: 4.5rem;
+  --text-display--line-height: 1;
+  --text-display--letter-spacing: -0.04em;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+
+  --color-obsidian-canvas: var(--obsidian-canvas);
+  --color-carbon-lift: var(--carbon-lift);
+  --color-ash-stroke: var(--ash-stroke);
+  --color-graphite-mid: var(--graphite-mid);
+  --color-warm-granite: var(--warm-granite);
+  --color-pale-stone: var(--pale-stone);
+  --color-bone: var(--bone);
+  --color-chalk: var(--chalk);
+  --color-signal-orange: var(--signal-orange);
+  --color-metric-green: var(--metric-green);
+
+  --color-chart-1: var(--signal-orange);
+  --color-chart-2: var(--metric-green);
+  --color-chart-3: var(--graphite-mid);
+  --color-chart-4: var(--pale-stone);
+  --color-chart-5: var(--warm-granite);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --font-geist: "Geist", Inter, system-ui, sans-serif;
+  --font-geist-mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+
+  --obsidian-canvas: oklch(0.176 0 0);
+  --carbon-lift: oklch(0.244 0.005 60);
+  --ash-stroke: oklch(0.373 0.004 40);
+  --graphite-mid: oklch(0.443 0.005 50);
+  --warm-granite: oklch(0.62 0.008 50);
+  --pale-stone: oklch(0.775 0.006 60);
+  --bone: oklch(0.949 0 0);
+  --chalk: oklch(0.98 0 0);
+  --signal-orange: oklch(0.652 0.202 40);
+  --metric-green: oklch(0.8 0.08 140);
+
+  --radius: 10px;
+  --background: var(--obsidian-canvas);
+  --foreground: var(--bone);
+  --card: var(--obsidian-canvas);
+  --card-foreground: var(--bone);
+  --popover: oklch(0.21 0.004 60);
+  --popover-foreground: var(--bone);
+  --primary: var(--chalk);
+  --primary-foreground: var(--obsidian-canvas);
+  --secondary: oklch(0.256 0.004 60);
+  --secondary-foreground: var(--bone);
+  --muted: var(--carbon-lift);
+  --muted-foreground: var(--warm-granite);
+  --accent: var(--carbon-lift);
+  --accent-foreground: var(--bone);
+  --destructive: oklch(0.577 0.2 27);
+  --destructive-foreground: var(--chalk);
+  --border: var(--carbon-lift);
+  --input: var(--ash-stroke);
+  --ring: var(--ash-stroke);
+
+  --sidebar: oklch(0.16 0 0);
+  --sidebar-foreground: var(--bone);
+  --sidebar-primary: var(--chalk);
+  --sidebar-primary-foreground: var(--obsidian-canvas);
+  --sidebar-accent: var(--carbon-lift);
+  --sidebar-accent-foreground: var(--bone);
+  --sidebar-border: var(--carbon-lift);
+  --sidebar-ring: var(--ash-stroke);
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-geist);
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: 400;
+  }
+}
+
+/* Geist Mono uppercase eyebrow / instrument voice */
+@utility eyebrow {
+  font-family: var(--font-geist-mono);
+  font-size: 0.75rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+
+@utility grain {
+  position: relative;
+  isolation: isolate;
+}
+
+@utility hairline {
+  border: 1px solid var(--carbon-lift);
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@utility status-pulse {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes marquee-x {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@utility marquee-track {
+  animation: marquee-x 28s linear infinite;
+}
