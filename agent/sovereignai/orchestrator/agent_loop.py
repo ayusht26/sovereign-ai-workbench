@@ -211,8 +211,16 @@ def run_agent_turn(
                     yield {"kind": "error", "message": str(e2)}
                     return ""
             else:
-                yield {"kind": "error", "message": f"API call failed for {decision.model_name}: {e}"}
-                return ""
+                api_fallback = cfg.api_fallback_for(decision.category)
+                yield {"kind": "error", "message": f"API model {decision.model_name} failed, trying free fallback {api_fallback}: {e}"}
+                try:
+                    decision = decision._replace(model_name=api_fallback)
+                    thought_text, current_tool_calls = yield from _run_stream(
+                        client, api_fallback, messages_for_model, tools_for_call, session, step
+                    )
+                except Exception as e2:
+                    yield {"kind": "error", "message": str(e2)}
+                    return ""
 
         messages_for_model.append({"role": "assistant", "content": thought_text})
 

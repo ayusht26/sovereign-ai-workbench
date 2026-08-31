@@ -21,6 +21,9 @@ from typing import Optional
 
 import typer
 
+from dotenv import load_dotenv
+
+load_dotenv()
 app = typer.Typer(
     name="sovai",
     help="SovereignAI — Local models. Local data. Zero external calls.",

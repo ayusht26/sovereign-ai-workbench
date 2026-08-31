@@ -1,0 +1,5 @@
+provider:
+  mode: api
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY
+  app_url: null

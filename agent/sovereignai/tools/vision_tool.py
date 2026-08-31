@@ -75,7 +75,8 @@ def _extract_with_pymupdf(pdf_path: Path) -> str | None:
 
 
 class VisionTool(Tool):
-    name = "vision_analyze"
+    name = "vision_tool"
+    categories = ["vision", "coding", "general", "planning"]  
     description = (
         "Analyze an image or scanned PDF using the vision-language model. "
         "Extracts text, key findings, tables, and handwritten notes. "
