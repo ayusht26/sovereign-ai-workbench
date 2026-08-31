@@ -77,19 +77,22 @@ router:
 #
 models:
   general:
-    local: "qwen3.5:9b"
-    api: "qwen/qwen3.5-9b"
-    fallback: "llama3.1:8b"
-
+    local: qwen3.5:9b
+    api: openai/gpt-oss-120b:free
+    api_fallback: openai/gpt-oss-20b:free
+    fallback: llama3.1:8b
   coding:
-    local: "qwen2.5-coder:7b"
-    api: "qwen/qwen2.5-coder-7b"
-    fallback: "llama3.1:8b"
-
+    local: qwen2.5-coder:7b
+    api: openai/gpt-oss-120b:free
+    api_fallback: openai/gpt-oss-20b:free
+    fallback: llama3.1:8b
   vision:
-    local: "qwen2.5vl:7b"
-    api: "qwen/qwen2.5-vl-7b"
-    fallback: "llava:7b"
+    local: qwen2.5vl:7b
+    api: qwen/qwen3-vl-235b-a22b-thinking
+    api_fallback: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+    fallback: llama3.1:8b
+  embedding:
+    model: nomic-embed-text
 
   # Embeddings ALWAYS remain local.
   # RAG data should never need to leave the machine.

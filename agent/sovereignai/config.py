@@ -106,7 +106,12 @@ class Config:
     
     def fallback_for(self, category: str) -> str:
         return self._raw.get("models", {}).get(category, {}).get("fallback", "llama3.1:8b")
-
+    
+    def api_fallback_for(self, category: str) -> str:
+        """Free-tier model to retry with in api mode — e.g. on rate limit or exhausted credits."""
+        node = self._raw.get("models", {}).get(category, {})
+        return node.get("api_fallback", "openai/gpt-oss-20b:free")
+    
     @property
     def embedding_model(self) -> str:
         return self._raw.get("models", {}).get("embedding", {}).get("model", "nomic-embed-text")
@@ -260,26 +265,39 @@ def doctor(verbose: bool = True) -> bool:
         "Start Ollama: `ollama serve`  (or install from https://ollama.com/download)",
     )
 
-    # Required models
+        # Required models — only check what actually needs to be local.
+    # In "api" mode, general/coding/vision run on OpenRouter, so their
+    # presence in `ollama list` is irrelevant; only the router (always
+    # local) and the embedding model (kept local for RAG consistency) matter.
+        # Required models — only check what actually needs to be local.
+    # In "api" mode, general/coding/vision run on OpenRouter, so their
+    # presence in `ollama list` is irrelevant; only the router (always
+    # local) and the embedding model (kept local for RAG consistency) matter.
     if ollama_ok:
         try:
             import ollama as _ollama_mod
             pulled = {m.model for m in _ollama_mod.Client(host=cfg.ollama_host).list().models}
-            for role in ("router", "general", "coding", "vision", "embedding"):
-                if role == "router":
-                    tag = cfg.router_model
-                elif role == "embedding":
-                    tag = cfg.embedding_model
-                else:
-                    tag = cfg.model_for(role)
-                present = any(tag in p for p in pulled)
-                _check(
-                    f"Model [{role}] {tag}",
-                    present,
-                    f"ollama pull {tag}",
+
+            roles_to_check = ["router", "embedding"]
+            if cfg.provider_mode == "local":
+                roles_to_check += ["general", "coding", "vision"]
+
+            for role in roles_to_check:
+                tag = cfg.router_model if role == "router" else (
+                    cfg.embedding_model if role == "embedding" else cfg.model_for(role)
                 )
+                present = any(tag in p for p in pulled)
+                _check(f"Model [{role}] {tag}", present, f"ollama pull {tag}")
         except Exception:
             pass
+
+    if cfg.provider_mode == "api":
+        api_key_present = bool(os.environ.get(cfg.provider_api_key_env, ""))
+        _check(
+            f"OpenRouter API key (${cfg.provider_api_key_env}) set",
+            api_key_present,
+            f"export {cfg.provider_api_key_env}=sk-...",
+        )
 
     # Docker
     docker_ok = shutil.which("docker") is not None
