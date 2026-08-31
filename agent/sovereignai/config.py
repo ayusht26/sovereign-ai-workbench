@@ -80,10 +80,30 @@ class Config:
     @property
     def router_keep_alive(self) -> str:
         return self._raw.get("router", {}).get("keep_alive", "-1")
+    @property
+    def provider_mode(self) -> str:
+        """'local' (Ollama, air-gapped) or 'api' (OpenRouter / OpenAI-compatible)."""
+        return self._raw.get("provider", {}).get("mode", "local")
+
+    @property
+    def provider_base_url(self) -> str:
+        return self._raw.get("provider", {}).get("base_url", "https://openrouter.ai/api/v1")
+
+    @property
+    def provider_api_key_env(self) -> str:
+        """Name of the environment variable holding the API key — never the key itself."""
+        return self._raw.get("provider", {}).get("api_key_env", "OPENROUTER_API_KEY")
+
+    @property
+    def provider_app_url(self) -> str | None:
+        return self._raw.get("provider", {}).get("app_url")
 
     def model_for(self, category: str) -> str:
-        return self._raw.get("models", {}).get(category, {}).get("model", "llama3.1:8b")
-
+        node = self._raw.get("models", {}).get(category, {})
+        key = "api" if self.provider_mode == "api" else "local"
+        # falls back to the old flat model key if someone hasn't migrated a category yet
+        return node.get(key) or node.get("model", "llama3.1:8b")
+    
     def fallback_for(self, category: str) -> str:
         return self._raw.get("models", {}).get(category, {}).get("fallback", "llama3.1:8b")
 

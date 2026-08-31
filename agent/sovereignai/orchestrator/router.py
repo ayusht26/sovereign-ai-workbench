@@ -3,6 +3,8 @@ router.py — Task classifier and model selector.
 
 The router keeps a tiny model (llama3.2:3b) permanently resident and uses it
 to classify every request into one of six categories at temperature=0.
+The router model always runs locally via Ollama, regardless of provider.mode,
+so classification stays instant and never depends on network access.
 The routing decision is always shown in the UI above the response.
 """
 from __future__ import annotations
@@ -11,9 +13,8 @@ import json
 import re
 from typing import NamedTuple
 
-import ollama
-
 from sovereignai.config import get_config
+from sovereignai.providers import get_llm_client
 
 
 CATEGORIES = frozenset(["general", "coding", "vision", "spreadsheet", "document_qa", "planning"])
@@ -40,6 +41,7 @@ class RoutingDecision(NamedTuple):
     confidence: float
     reason: str
     uncertain: bool
+    provider: str  # "local" | "api" — which provider the resolved model will run on
 
 
 class Router:
@@ -48,43 +50,38 @@ class Router:
     def __init__(self) -> None:
         self._cfg = get_config()
 
-    def _client(self) -> ollama.Client:
-        return ollama.Client(host=self._cfg.ollama_host)
-
     def classify(self, user_message: str, context_hint: str = "") -> RoutingDecision:
         """
         Classify the user's request and return a RoutingDecision.
         Falls back to 'general' if the router model fails or confidence is low.
         """
         cfg = self._cfg
+        client = get_llm_client()
+        messages = [
+            {"role": "system", "content": _ROUTER_SYSTEM},
+            {"role": "user", "content": user_message},
+        ]
 
         try:
-            client = self._client()
-            response = client.chat(
+            result = client.chat(
                 model=cfg.router_model,
-                messages=[
-                    {"role": "system", "content": _ROUTER_SYSTEM},
-                    {"role": "user", "content": user_message},
-                ],
-                options={"temperature": 0, "num_predict": 60},
+                messages=messages,
+                temperature=0,
+                max_tokens=60,
                 keep_alive=cfg.router_keep_alive,
+                force_local=True,
             )
-            raw = response.message.content or ""
-            parsed = _parse_router_output(raw)
+            parsed = _parse_router_output(result.content)
         except Exception as e:
-            # Router model not available — try fallback, then default to general
             try:
-                client = self._client()
-                response = client.chat(
+                result = client.chat(
                     model=cfg.router_fallback,
-                    messages=[
-                        {"role": "system", "content": _ROUTER_SYSTEM},
-                        {"role": "user", "content": user_message},
-                    ],
-                    options={"temperature": 0, "num_predict": 60},
+                    messages=messages,
+                    temperature=0,
+                    max_tokens=60,
+                    force_local=True,
                 )
-                raw = response.message.content or ""
-                parsed = _parse_router_output(raw)
+                parsed = _parse_router_output(result.content)
             except Exception:
                 parsed = {"category": "general", "confidence": 0.0, "reason": f"Router unavailable: {e}"}
 
@@ -92,17 +89,14 @@ class Router:
         confidence = float(parsed.get("confidence", 0.0))
         reason = parsed.get("reason", "")
 
-        # Validate category
         if category not in CATEGORIES:
             category = "general"
             confidence = 0.0
 
         uncertain = confidence < 0.55
-
         if uncertain:
             category = "general"
 
-        # Resolve model tag for this category
         model_name = _resolve_model(cfg, category)
 
         return RoutingDecision(
@@ -111,6 +105,7 @@ class Router:
             confidence=confidence,
             reason=reason,
             uncertain=uncertain,
+            provider=cfg.provider_mode,
         )
 
     def resolve_model(self, category: str) -> str:
@@ -118,26 +113,20 @@ class Router:
 
 
 def _parse_router_output(raw: str) -> dict:
-    """Extract JSON from the router response, even if there's surrounding text."""
-    # Try direct parse first
     try:
         return json.loads(raw.strip())
     except json.JSONDecodeError:
         pass
-
-    # Try to extract JSON object from the response
     match = re.search(r'\{[^}]+\}', raw, re.DOTALL)
     if match:
         try:
             return json.loads(match.group())
         except json.JSONDecodeError:
             pass
-
     return {"category": "general", "confidence": 0.0, "reason": "Parse failed"}
 
 
 def _resolve_model(cfg, category: str) -> str:
-    """Resolve the model tag for a given category, with fallback."""
     if category in ("general", "planning", "document_qa", "spreadsheet"):
         return cfg.model_for("general")
     elif category == "coding":
@@ -148,7 +137,6 @@ def _resolve_model(cfg, category: str) -> str:
         return cfg.model_for("general")
 
 
-# Module-level singleton
 _router: Router | None = None
 
 
@@ -157,4 +145,3 @@ def get_router() -> Router:
     if _router is None:
         _router = Router()
     return _router
-
