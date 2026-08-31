@@ -7,21 +7,25 @@ import {
   Camera,
   LogOut,
   Building,
-  Check,
   ArrowLeft,
-  Lock,
-  Mail,
   Calendar,
   Sparkles,
 } from 'lucide-react';
-import { useState, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Nav } from '@/components/site/nav';
-import { Eyebrow } from '@/components/site/reveal';
-import { SlideTextButton } from '@/components/ui/slide-text-button';
+import AvatarPicker from '@/components/kokonutui/avatar-picker';
+import { UserAvatar } from '@/components/kokonutui/avatar-data';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 
 export const Route = createFileRoute('/profile')({
   head: () => ({
@@ -39,9 +43,12 @@ export const Route = createFileRoute('/profile')({
 function ProfilePage() {
   const navigate = useNavigate();
   const { user, profile, company, role, loading, logout, updateProfile, updatePassword } = useAuth();
-  const fileInputRef = useRef(null);
 
-  // Form states
+  // Modal state for Avatar Picker Window
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
+  const [isSavingAvatar, setIsSavingAvatar] = useState(false);
+
+  // Form states for Name and Password
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [isUpdatingName, setIsUpdatingName] = useState(false);
 
@@ -50,7 +57,11 @@ function ProfilePage() {
   const [confirmPass, setConfirmPass] = useState('');
   const [isUpdatingPass, setIsUpdatingPass] = useState(false);
 
-  const [avatarUploading, setAvatarUploading] = useState(false);
+  useEffect(() => {
+    if (profile?.full_name) {
+      setFullName(profile.full_name);
+    }
+  }, [profile?.full_name]);
 
   if (loading) {
     return (
@@ -85,8 +96,60 @@ function ProfilePage() {
     );
   }
 
+  // Handle saving chosen Avatar (Preset or Custom URL)
+  const handleSaveAvatar = async (avatarUrl: string) => {
+    setIsSavingAvatar(true);
+    try {
+      const { error } = await updateProfile({ avatar_url: avatarUrl });
+      if (error) {
+        toast.error(error.message || 'Failed to save avatar');
+        return;
+      }
+      toast.success('Avatar updated successfully!');
+      setIsAvatarPickerOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to save avatar');
+    } finally {
+      setIsSavingAvatar(false);
+    }
+  };
+
+  // Handle uploading custom file to Supabase storage
+  const handleUploadCustomFile = async (file: File): Promise<string | void> => {
+    if (!user) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Avatar image must be smaller than 2MB');
+      return;
+    }
+
+    try {
+      const fileExt = file.name.split('.').pop() || 'png';
+      const filePath = `${user.id}/avatar_${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) {
+        // Storage bucket fallback -> Data URL
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            resolve(reader.result as string);
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      return urlData.publicUrl;
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to upload avatar image');
+    }
+  };
+
   // Handle Full Name Update
-  const handleSaveName = async (e) => {
+  const handleSaveName = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsUpdatingName(true);
     try {
@@ -102,7 +165,7 @@ function ProfilePage() {
   };
 
   // Handle Password Update
-  const handleSavePassword = async (e) => {
+  const handleSavePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPass.length < 6) {
       toast.error('Password must be at least 6 characters');
@@ -126,51 +189,6 @@ function ProfilePage() {
       setCurrentPass('');
     } finally {
       setIsUpdatingPass(false);
-    }
-  };
-
-  // Handle Avatar Upload
-  const handleAvatarChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('Avatar image must be smaller than 2MB');
-      return;
-    }
-
-    setAvatarUploading(true);
-    try {
-      const fileExt = file.name.split('.').pop() || 'png';
-      const filePath = `${user.id}/avatar_${Date.now()}.${fileExt}`;
-
-      // Upload to Supabase avatars bucket
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file, { upsert: true });
-
-      if (uploadError) {
-        // If storage bucket isn't configured, store data URL as preview
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const dataUrl = reader.result;
-          await updateProfile({ avatar_url: dataUrl });
-          toast.success('Avatar preview updated');
-        };
-        reader.readAsDataURL(file);
-        return;
-      }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-      const publicUrl = urlData.publicUrl;
-
-      await updateProfile({ avatar_url: publicUrl });
-      toast.success('Avatar uploaded and updated!');
-    } catch (err) {
-      toast.error(err?.message || 'Failed to upload avatar');
-    } finally {
-      setAvatarUploading(false);
     }
   };
 
@@ -203,55 +221,46 @@ function ProfilePage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="rounded-[10px] border border-carbon-lift bg-[#121212] p-6 md:p-8"
+          className="rounded-[12px] border border-carbon-lift bg-[#121212] p-6 md:p-8 shadow-xl"
         >
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-5">
-              {/* Avatar with upload button */}
-              <div className="relative group">
-                <div className="flex h-20 w-20 overflow-hidden items-center justify-center rounded-full border-2 border-ash-stroke bg-carbon-lift text-xl font-bold text-bone">
-                  {profile.avatar_url ? (
-                    <img
-                      src={profile.avatar_url}
-                      alt={profile.username}
-                      className="h-full w-full object-cover"
+              {/* Interactive Avatar Icon — click opens Avatar Picker window */}
+              <div
+                className="relative group shrink-0 cursor-pointer"
+                onClick={() => setIsAvatarPickerOpen(true)}
+                title="Click to choose or upload avatar"
+              >
+                <div className="h-20 w-20 rounded-full bg-gradient-to-br from-signal-orange via-purple-500 to-blue-500 p-0.5 shadow-lg transition-transform duration-200 group-hover:scale-105">
+                  <div className="h-full w-full overflow-hidden rounded-full bg-[#121212] flex items-center justify-center">
+                    <UserAvatar
+                      avatarUrl={profile.avatar_url}
+                      username={profile.username}
+                      size={76}
+                      className="h-full w-full"
                     />
-                  ) : (
-                    <span>{profile.username.slice(0, 2).toUpperCase()}</span>
-                  )}
+                  </div>
                 </div>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={avatarUploading}
-                  className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 opacity-0 transition group-hover:opacity-100 cursor-pointer"
-                  title="Upload new avatar"
-                >
+                <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 opacity-0 transition group-hover:opacity-100">
                   <Camera className="h-6 w-6 text-white" />
-                </button>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleAvatarChange}
-                  accept="image/*"
-                  className="hidden"
-                />
+                </div>
               </div>
 
               <div>
-                <div className="flex items-center gap-3">
-                  <h1 className="text-2xl font-semibold tracking-tight text-bone">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-bone">
                     @{profile.username}
                   </h1>
                   <span
                     className={cn(
-                      'rounded px-2 py-0.5 font-mono text-[11px] font-bold uppercase',
-                      role === 'admin' && 'bg-purple-500/20 text-purple-400 border border-purple-500/30',
-                      role === 'tech' && 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
-                      role === 'finance' && 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
-                      role === 'support' && 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      'rounded px-2 py-0.5 font-mono text-[11px] font-bold uppercase border',
+                      role === 'admin' && 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+                      role === 'tech' && 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+                      role === 'finance' && 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+                      role === 'support' && 'bg-amber-500/20 text-amber-400 border-amber-500/30'
                     )}
                   >
-                    {role}
+                    {role || 'user'}
                   </span>
                 </div>
                 <p className="text-sm text-warm-granite mt-1">
@@ -271,11 +280,11 @@ function ProfilePage() {
             </div>
 
             <button
-              onClick={() => {
-                logout();
+              onClick={async () => {
+                await logout();
                 navigate({ to: '/login' });
               }}
-              className="flex items-center gap-2 rounded-[3px] border border-carbon-lift px-4 py-2 text-xs text-warm-granite hover:border-red-500/40 hover:text-red-400 transition cursor-pointer"
+              className="flex items-center gap-2 rounded-[3px] border border-carbon-lift px-4 py-2 text-xs text-warm-granite hover:border-red-500/40 hover:text-red-400 transition cursor-pointer self-start sm:self-center"
             >
               <LogOut className="h-3.5 w-3.5" /> Sign Out
             </button>
@@ -291,7 +300,7 @@ function ProfilePage() {
           <div className="mt-2 text-xs text-pale-stone leading-relaxed font-mono">
             {role === 'admin' && (
               <p>
-                As an <strong>Administrator</strong> for <strong>{company?.name}</strong>, you have read, write, and provisioning authority across all technical, financial, and operational corpora.
+                As an <strong>Administrator</strong> for <strong>{company?.name || 'Tata Motors'}</strong>, you have read, write, and provisioning authority across all technical, financial, and operational corpora.
               </p>
             )}
             {role === 'tech' && (
@@ -314,8 +323,8 @@ function ProfilePage() {
 
         {/* Two Column Settings Grid */}
         <div className="mt-8 grid gap-6 md:grid-cols-2">
-          {/* Update Display Name */}
-          <div className="rounded-[10px] border border-carbon-lift bg-[#121212] p-6">
+          {/* Display Information */}
+          <div className="rounded-[10px] border border-carbon-lift bg-[#121212] p-6 shadow-lg">
             <div className="flex items-center gap-2 text-sm font-semibold text-bone">
               <User className="h-4 w-4 text-signal-orange" />
               Display Information
@@ -359,7 +368,7 @@ function ProfilePage() {
           </div>
 
           {/* Change Password */}
-          <div className="rounded-[10px] border border-carbon-lift bg-[#121212] p-6">
+          <div className="rounded-[10px] border border-carbon-lift bg-[#121212] p-6 shadow-lg">
             <div className="flex items-center gap-2 text-sm font-semibold text-bone">
               <KeyRound className="h-4 w-4 text-signal-orange" />
               Security & Password
@@ -406,6 +415,30 @@ function ProfilePage() {
           </div>
         </div>
       </main>
+
+      {/* Avatar Picker Modal / Window */}
+      <Dialog open={isAvatarPickerOpen} onOpenChange={setIsAvatarPickerOpen}>
+        <DialogContent className="max-w-[460px] border-carbon-lift bg-[#121212] text-bone p-6 sm:p-8 shadow-2xl">
+          <DialogHeader className="text-center sm:text-center space-y-1">
+            <DialogTitle className="text-lg md:text-xl font-semibold tracking-tight text-bone">
+              Pick Your Avatar
+            </DialogTitle>
+            <DialogDescription className="text-xs md:text-sm text-warm-granite">
+              Choose a sovereign preset or upload your own avatar
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="pt-2">
+            <AvatarPicker
+              currentAvatarUrl={profile.avatar_url}
+              username={profile.username}
+              onSaveAvatar={handleSaveAvatar}
+              onUploadCustomFile={handleUploadCustomFile}
+              isSubmitting={isSavingAvatar}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

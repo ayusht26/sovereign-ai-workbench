@@ -11,6 +11,7 @@ import AITextLoading from "@/components/kokonutui/ai-text-loading";
 import { ParallaxHero } from "@/components/site/parallax-hero";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import { SlideTextButton } from "@/components/ui/slide-text-button";
+import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -92,6 +93,8 @@ const comparison = [
 ];
 
 function Home() {
+  const { user } = useAuth();
+
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.hash) {
       const targetId = window.location.hash.slice(1);
@@ -126,7 +129,7 @@ function Home() {
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
               <SlideTextButton
-                to="/chat"
+                to={user ? "/chat" : "/login"}
                 text="Open the workbench"
                 className="h-11 px-5 rounded-md"
               />

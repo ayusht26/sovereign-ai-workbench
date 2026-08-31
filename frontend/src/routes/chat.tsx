@@ -33,6 +33,7 @@ import {
 } from '@/lib/rag-service';
 import { RecentQuery } from '@/lib/supabase';
 import { BastionMark } from '@/components/site/parallax-hero';
+import ProfileDropdown from '@/components/kokonutui/profile-dropdown';
 
 export const Route = createFileRoute('/chat')({
   head: () => ({
@@ -86,7 +87,7 @@ const MODELS = [
 
 export default function ChatPage() {
   const navigate = useNavigate();
-  const { user, profile, company, role, logout } = useAuth();
+  const { user, profile, company, role, loading, logout } = useAuth();
 
   const [selected, setSelected] = useState('auto');
   const [open, setOpen] = useState(false);
@@ -95,6 +96,13 @@ export default function ChatPage() {
   const [recentQueries, setRecentQueries] = useState<RecentQuery[]>([]);
   const [loadingQueries, setLoadingQueries] = useState<boolean>(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+
+  // Protected route check
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate({ to: '/login' });
+    }
+  }, [loading, user, navigate]);
 
   const active = useMemo(
     () =>
@@ -447,28 +455,9 @@ export default function ChatPage() {
           <div className="flex items-center gap-3">
             <span className="hidden eyebrow text-metric-green sm:inline">● local vLLM</span>
 
-            {/* Profile badge / link */}
+            {/* Profile Dropdown */}
             {profile ? (
-              <div className="flex items-center gap-2 rounded-[3px] border border-carbon-lift px-2 py-1.5">
-                <Link to="/profile" className="flex items-center gap-2 hover:opacity-80 transition">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-signal-orange/20 text-caption font-bold text-signal-orange">
-                    {profile.username.slice(0, 2).toUpperCase()}
-                  </span>
-                  <span className="hidden text-body-sm text-bone sm:inline">
-                    {profile.full_name || `@${profile.username}`}
-                  </span>
-                </Link>
-                <button
-                  onClick={() => {
-                    logout();
-                    navigate({ to: '/login' });
-                  }}
-                  title="Sign Out"
-                  className="text-warm-granite hover:text-bone transition cursor-pointer p-0.5"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                </button>
-              </div>
+              <ProfileDropdown />
             ) : (
               <Link
                 to="/login"

@@ -10,6 +10,7 @@ import { HyperText } from "@/components/ui/hyper-text";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import { SlideTextButton } from "@/components/ui/slide-text-button";
 import { useAuth } from "@/lib/auth-context";
+import { UserAvatar } from "@/components/kokonutui/avatar-data";
 
 const links = [
   { label: "Product", to: "/" as const, hash: "product" },
@@ -91,7 +92,7 @@ export function Nav() {
 
         <div className="flex items-center gap-3">
           <InteractiveHoverButton
-            to="/chat"
+            to={user ? "/chat" : "/login"}
             text="Open workbench"
             className="hidden sm:inline-flex h-9 px-4 text-body-sm rounded-md"
           />
@@ -99,11 +100,14 @@ export function Nav() {
           {user && profile ? (
             <Link
               to="/profile"
-              className="flex items-center gap-2 rounded-md border border-carbon-lift bg-carbon-lift/50 px-3 py-1.5 text-xs text-bone hover:border-ash-stroke transition"
+              className="flex items-center gap-2 rounded-md border border-carbon-lift bg-carbon-lift/50 px-2.5 py-1 text-xs text-bone hover:border-ash-stroke transition"
             >
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-signal-orange/20 text-[10px] font-bold text-signal-orange">
-                {profile.username.slice(0, 2).toUpperCase()}
-              </span>
+              <UserAvatar
+                avatarUrl={profile.avatar_url}
+                username={profile.username}
+                size={22}
+                className="h-5.5 w-5.5"
+              />
               <span className="hidden sm:inline">@{profile.username}</span>
             </Link>
           ) : (
@@ -154,7 +158,7 @@ export function Nav() {
             </Link>
           )}
           <InteractiveHoverButton
-            to="/chat"
+            to={user ? "/chat" : "/login"}
             text="Open workbench"
             onClick={() => setOpen(false)}
             className="mt-2 w-full h-10"
