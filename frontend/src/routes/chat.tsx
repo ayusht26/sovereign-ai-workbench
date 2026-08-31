@@ -17,6 +17,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AI_Input_Search from '@/components/kokonutui/ai-input-search';
 import AITextLoading from '@/components/kokonutui/ai-text-loading';
+import { MarkdownMessage } from '@/components/ui/markdown-message';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -191,18 +192,24 @@ export default function ChatPage() {
     }
   };
 
-  const send = async (raw?: string, isWebSearch: boolean = false, attachedFile?: File | null) => {
+  const send = async (
+    raw?: string,
+    isWebSearch: boolean = false,
+    attachedFile?: File | null,
+    imageDataUrl?: string | null
+  ) => {
     const text = (raw ?? '').trim();
-    if ((!text && !attachedFile) || busy) return;
+    if ((!text && !attachedFile && !imageDataUrl) || busy) return;
 
     const userMsgId = crypto.randomUUID();
-    const queryDisplayText = text || `Uploaded file: ${attachedFile?.name}`;
+    const queryDisplayText = text || (imageDataUrl ? 'Attached image context' : `Uploaded file: ${attachedFile?.name}`);
 
     const userMsg: ChatMessage = {
       id: userMsgId,
       role: 'user',
       text: queryDisplayText,
       attachedFileName: attachedFile?.name,
+      attachedImageDataUrl: imageDataUrl || undefined,
       createdAt: new Date().toISOString(),
     };
 
@@ -238,14 +245,21 @@ export default function ChatPage() {
       const activeRole = role || 'support';
       const companyName = company?.name || 'Tata Motors';
 
+      const promptText =
+        text ||
+        (imageDataUrl
+          ? 'Please analyze and inspect the attached image in detail.'
+          : `Please analyze attached document: ${attachedFile?.name}`);
+
       const queryRes = await executeWorkbenchQuery(
-        text || `Please analyze attached document: ${attachedFile?.name}`,
+        promptText,
         activeUserId,
         activeCompanyId,
         activeRole,
         companyName,
         selected === 'auto' ? 'auto' : active.name,
-        isWebSearch
+        isWebSearch,
+        imageDataUrl || undefined
       );
 
       const hasPassages = Boolean(queryRes.passages && queryRes.passages.length > 0);
@@ -520,10 +534,20 @@ export default function ChatPage() {
                   className={cn(m.role === 'user' && 'flex justify-end')}
                 >
                   {m.role === 'user' ? (
-                    <div className="max-w-[85%] rounded-[10px] bg-bone px-4 py-3 text-body-sm text-obsidian-canvas font-medium shadow-sm">
-                      {m.text}
-                      {m.attachedFileName && (
-                        <div className="mt-2 inline-flex items-center gap-1.5 rounded bg-black/10 px-2 py-0.5 text-[11px] font-mono">
+                    <div className="max-w-[85%] rounded-[10px] bg-bone px-4 py-3 text-body-sm text-obsidian-canvas font-medium shadow-sm space-y-2">
+                      {m.attachedImageDataUrl && (
+                        <div className="overflow-hidden rounded-lg border border-black/10 bg-black/5 p-1 max-w-[260px]">
+                          <img
+                            src={m.attachedImageDataUrl}
+                            alt="Attached user context"
+                            className="max-h-48 w-full object-cover rounded-md cursor-pointer hover:opacity-95 transition"
+                            onClick={() => window.open(m.attachedImageDataUrl, '_blank')}
+                          />
+                        </div>
+                      )}
+                      <div>{m.text}</div>
+                      {m.attachedFileName && !m.attachedImageDataUrl && (
+                        <div className="mt-1 inline-flex items-center gap-1.5 rounded bg-black/10 px-2 py-0.5 text-[11px] font-mono">
                           <Paperclip className="h-3 w-3" />
                           <span>{m.attachedFileName}</span>
                         </div>
@@ -674,9 +698,9 @@ export default function ChatPage() {
                         </div>
                       )}
 
-                      {/* Main Message Text Content */}
-                      <div className="whitespace-pre-wrap text-body-sm text-bone/90 font-sans leading-relaxed pt-1">
-                        {m.text}
+                      {/* Main Message Text & Rich Code Block Content */}
+                      <div className="text-body-sm text-bone font-sans leading-relaxed pt-1">
+                        <MarkdownMessage content={m.text} />
                       </div>
 
                       <div className="mt-3 flex items-center gap-3 border-t border-carbon-lift/40 pt-2 text-[11px] font-mono text-warm-granite">
@@ -715,10 +739,12 @@ export default function ChatPage() {
         <div className="border-t border-carbon-lift bg-obsidian-canvas/90 backdrop-blur-md px-5 py-4">
           <div className="mx-auto max-w-3xl">
             <AI_Input_Search
-              placeholder={`Ask ${role ? `as [${role.toUpperCase()}]` : ''} regarding company docs, code, or images…`}
+              placeholder={`Ask ${role ? `as [${role.toUpperCase()}]` : ''} regarding company docs, code, or paste images…`}
               searchLabel="Web Search"
               disabled={busy}
-              onSubmit={(text, isWebSearch, file) => send(text, isWebSearch, file)}
+              onSubmit={(text, isWebSearch, file, imageDataUrl) =>
+                send(text, isWebSearch, file, imageDataUrl)
+              }
             />
             <div className="mt-2 flex items-center justify-between px-2 text-[11px] font-mono text-warm-granite">
               <span className="flex items-center gap-1.5">
