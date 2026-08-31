@@ -80,7 +80,7 @@ const MODELS = [
   { id: 'lite', name: 'Qwen3.5-8B', detail: 'Fast drafts, low GPU load', tag: 'lite' },
 ];
 
-export default function ChatPage() {
+function ChatPage() {
   const navigate = useNavigate();
   const { user, profile, company, role, loading } = useAuth();
 

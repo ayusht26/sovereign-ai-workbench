@@ -29,7 +29,7 @@ export const Route = createFileRoute("/contact")({
   component: ContactPage,
 });
 
-export default function ContactPage() {
+function ContactPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
