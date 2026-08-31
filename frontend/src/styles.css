@@ -87,11 +87,19 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+@font-face {
+  font-family: "Greater Theory";
+  src: url("/fonts/GreaterTheory.otf") format("opentype");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --font-geist: "Geist", Inter, system-ui, sans-serif;
   --font-geist-mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
-  --font-ultra: "Ultra", serif;
-  --font-display: "Ultra", serif;
+  --font-greater-theory: "Greater Theory", sans-serif;
+  --font-display: "Greater Theory", sans-serif;
 
   --obsidian-canvas: oklch(0.176 0 0);
   --carbon-lift: oklch(0.244 0.005 60);
@@ -292,11 +300,11 @@
 
 .parallax__brand-title {
   margin: 0;
-  font-family: var(--font-ultra), "Ultra", serif;
-  font-size: clamp(3.25rem, 9.5vw, 9.5rem);
-  line-height: 0.95;
-  letter-spacing: 0.015em;
-  font-weight: 400;
+  font-family: var(--font-greater-theory), "Greater Theory", sans-serif;
+  font-size: clamp(3.75rem, 11vw, 11rem);
+  line-height: 0.92;
+  letter-spacing: 0.02em;
+  font-weight: normal;
   color: var(--chalk);
   text-transform: none;
   text-shadow: none;
