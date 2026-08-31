@@ -36,31 +36,28 @@ export function ParallaxHero() {
     const wrapper = parallaxRef.current;
     if (!wrapper) return;
 
-    const header = wrapper.querySelector<HTMLElement>(".parallax__header");
-    const layersEl = wrapper.querySelector("[data-parallax-layers]");
-    if (!header || !layersEl) return;
+    const layersEl = wrapper.querySelector<HTMLElement>("[data-parallax-layers]");
+    if (!layersEl) return;
 
-    // Use GSAP pin so ScrollTrigger can measure scroll progress correctly.
-    // CSS sticky causes ScrollTrigger to mis-read element positions.
+    // Authentic Osmo Parallax: No pinning!
+    // As the header naturally scrolls up with the page, layers translate downward at differential speeds,
+    // causing the foreground figure (Layer 4) to stay anchored to the scrolling website beneath it,
+    // while the title, mountains and sky slide behind the foreground at slower speeds.
     const ctx = gsap.context(() => {
       const tl = gsap.timeline({
         scrollTrigger: {
-          trigger: header,
-          start: "top top",
-          end: "+=100%",
-          pin: true,
-          pinSpacing: true,
+          trigger: layersEl,
+          start: "0% 0%",
+          end: "100% 0%",
           scrub: 0,
-          anticipatePin: 1,
         },
       });
 
-      // Real depth parallax: foreground moves fastest, background moves slowest
       const layers = [
-        { layer: "1", yPercent: -15 },  // sky — farthest, drifts the least
-        { layer: "2", yPercent: -35 },  // mountains — mid-ground
-        { layer: "3", yPercent: -50 },  // title — clears out ahead of the figure
-        { layer: "4", yPercent: -75 },  // foreground figure — closest, moves fastest
+        { layer: "1", yPercent: 70 }, // Sky moves down fastest inside container -> slowest on screen
+        { layer: "2", yPercent: 55 }, // Mountains move down slower -> mid speed on screen
+        { layer: "3", yPercent: 40 }, // Title moves down -> figure slides up over it
+        { layer: "4", yPercent: 10 }, // Foreground figure barely shifts -> moves up with the attached website
       ];
 
       layers.forEach((layerObj, idx) => {
@@ -72,7 +69,7 @@ export function ParallaxHero() {
       });
     }, wrapper);
 
-    // Lenis smooth scroll — integrate with ScrollTrigger
+    // Lenis smooth scroll
     const lenis = new Lenis();
     lenis.on("scroll", ScrollTrigger.update);
     gsap.ticker.add((time) => {
@@ -88,13 +85,10 @@ export function ParallaxHero() {
 
   return (
     <div ref={parallaxRef} className="parallax">
-      {/* Header — GSAP will pin this; do NOT use position:sticky in CSS */}
       <section className="parallax__header">
         <div className="parallax__visuals">
-          <div className="parallax__black-line-overflow" />
-
           <div data-parallax-layers className="parallax__layers">
-            {/* Layer 1 — distant sky / stars (moves most — 70%) */}
+            {/* Layer 1 — Sky / Stars */}
             <img
               src="https://cdn.prod.website-files.com/671752cd4027f01b1b8f1c7f/6717795be09b462b2e8ebf71_osmo-parallax-layer-3.webp"
               loading="eager"
@@ -103,7 +97,7 @@ export function ParallaxHero() {
               className="parallax__layer-img"
             />
 
-            {/* Layer 2 — mountain range (55%) */}
+            {/* Layer 2 — Mountain Range */}
             <img
               src="https://cdn.prod.website-files.com/671752cd4027f01b1b8f1c7f/6717795b4d5ac529e7d3a562_osmo-parallax-layer-2.webp"
               loading="eager"
@@ -112,7 +106,7 @@ export function ParallaxHero() {
               className="parallax__layer-img"
             />
 
-            {/* Layer 3 — clean, aesthetic brand name & tagline (40%) */}
+            {/* Layer 3 — Brand Name & Tagline */}
             <div data-parallax-layer="3" className="parallax__layer-title">
               <div className="parallax__content-block select-none">
                 <h1 className="parallax__brand-title">
@@ -124,7 +118,7 @@ export function ParallaxHero() {
               </div>
             </div>
 
-            {/* Layer 4 — figure on mountain (barely moves — 10%) */}
+            {/* Layer 4 — Foreground figure on hill */}
             <img
               src="https://cdn.prod.website-files.com/671752cd4027f01b1b8f1c7f/6717795bb5aceca85011ad83_osmo-parallax-layer-1.webp"
               loading="eager"
@@ -134,14 +128,18 @@ export function ParallaxHero() {
             />
           </div>
 
-          {/* Bottom vignette */}
+          {/* Bottom vignette — smooth natural fade into page canvas */}
           <div className="parallax__fade" />
+          <div className="parallax__black-line-overflow" />
         </div>
       </section>
 
-      {/* Content section — appears after the pin releases, logo centred */}
+      {/* Content section — seamless transition immediately below the hero */}
       <section className="parallax__content">
-        <BastionMark className="h-20 w-20 text-signal-orange" color="currentColor" />
+        <div className="flex flex-col items-center gap-3">
+          <BastionMark className="h-16 w-16 text-signal-orange" color="currentColor" />
+          <span className="eyebrow tracking-[0.25em] text-warm-granite/70">Bastion OS</span>
+        </div>
       </section>
     </div>
   );

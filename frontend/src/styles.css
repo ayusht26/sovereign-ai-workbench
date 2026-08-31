@@ -194,47 +194,34 @@
 }
 
 /* ─────────────────────────────────────────────
-   Parallax Hero — faithful Osmo port
+   Parallax Hero — authentic Osmo parallax
    ───────────────────────────────────────────── */
 
-/*
-  How it works:
-  • .parallax__header is position:sticky so it pins while
-    the user scrolls through .parallax__scroll-spacer (200vh).
-  • data-parallax-layers is the GSAP ScrollTrigger trigger.
-    Because its parent is sticky and fills 100vh, the trigger
-    top is always at viewport-top — scrub: 0 maps the spacer
-    scroll distance to the yPercent animation on each layer.
-  • Each image layer starts at top:-20% and is 140% tall,
-    so yPercent travel never shows a gap.
-*/
-
 .parallax {
+  width: 100%;
   position: relative;
+  overflow: hidden;
 }
 
 .parallax__header {
+  position: relative;
+  width: 100%;
   height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   overflow: hidden;
   background: var(--obsidian-canvas);
+  z-index: 2;
 }
 
 .parallax__visuals {
-  position: relative;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
-}
-
-/* Thin bar masks top-edge image overflow during parallax travel */
-.parallax__black-line-overflow {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--obsidian-canvas);
-  z-index: 30;
 }
 
 /* Layers container absolutely fills the visuals area */
@@ -246,42 +233,52 @@
   overflow: hidden;
 }
 
-/* Every image layer: taller than container, starts pulled up */
+/* Every image layer: taller than container, starts pulled up so positive yPercent travel fills the frame */
 .parallax__layer-img {
   position: absolute;
-  top: -20%;
+  top: -17.5%;
   left: 0;
   width: 100%;
-  height: 140%;
+  height: 117.5%;
   object-fit: cover;
   object-position: center center;
   will-change: transform;
   display: block;
+  pointer-events: none;
+}
+
+/* Layer stacking orders */
+.parallax__layer-img[data-parallax-layer="1"] {
   z-index: 1;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
 }
 
-/* Foreground figure explicitly above the title */
-.parallax__layer-img[data-parallax-layer="4"] {
-  z-index: 3;
+.parallax__layer-img[data-parallax-layer="2"] {
+  z-index: 2;
 }
 
-/* Title / content layer */
+/* Title / brand content layer */
 .parallax__layer-title {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   will-change: transform;
-  z-index: 2;
+  z-index: 3;
+  pointer-events: auto;
+}
+
+/* Foreground figure placed explicitly above the title */
+.parallax__layer-img[data-parallax-layer="4"] {
+  z-index: 4;
 }
 
 .parallax__content-block {
   text-align: center;
-  max-width: 700px;
+  max-width: 800px;
   padding: 0 1.5rem;
   display: flex;
   flex-direction: column;
@@ -290,10 +287,10 @@
 
 .parallax__brand-title {
   margin-top: 0.5rem;
-  font-size: clamp(3.5rem, 9vw, 8rem);
+  font-size: clamp(3.75rem, 10vw, 8.5rem);
   line-height: 0.9;
-  letter-spacing: -0.02em;
-  font-weight: 700;
+  letter-spacing: -0.025em;
+  font-weight: 800;
   color: var(--bone);
   text-transform: uppercase;
   text-shadow: 0 4px 32px rgba(0, 0, 0, 0.95), 0 0 90px rgba(0, 0, 0, 0.7);
@@ -302,7 +299,7 @@
 .parallax__brand-tagline {
   margin-top: 1.25rem;
   font-family: var(--font-geist-mono);
-  font-size: clamp(0.8rem, 1.6vw, 1.15rem);
+  font-size: clamp(0.8rem, 1.5vw, 1.1rem);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--pale-stone);
@@ -310,57 +307,67 @@
   text-shadow: 0 2px 20px rgba(0, 0, 0, 0.95);
 }
 
-/* Bottom fade — dissolves scene into page canvas */
+/* Bottom fade — smoothly blends the foreground mountain base into the black site canvas */
 .parallax__fade {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 260px;
-  background: linear-gradient(to top, var(--obsidian-canvas) 0%, transparent 100%);
+  height: 25%;
+  background: linear-gradient(
+    to top,
+    var(--obsidian-canvas) 0%,
+    rgba(18, 18, 18, 0.738) 19%,
+    rgba(18, 18, 18, 0.541) 34%,
+    rgba(18, 18, 18, 0.382) 47%,
+    rgba(18, 18, 18, 0.278) 56.5%,
+    rgba(18, 18, 18, 0.194) 65%,
+    rgba(18, 18, 18, 0.126) 73%,
+    rgba(18, 18, 18, 0.075) 80.2%,
+    rgba(18, 18, 18, 0.042) 86.1%,
+    rgba(18, 18, 18, 0.021) 91%,
+    rgba(18, 18, 18, 0.008) 95.2%,
+    rgba(18, 18, 18, 0.002) 98.2%,
+    transparent 100%
+  );
   z-index: 20;
   pointer-events: none;
 }
 
-/* Top fade — blends Nav cleanly over the scene */
+/* Top fade — gentle ambient vignette behind Nav */
 .parallax__visuals::before {
   content: "";
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 200px;
+  height: 180px;
   background: linear-gradient(to bottom, var(--obsidian-canvas) 0%, transparent 100%);
   z-index: 20;
   pointer-events: none;
 }
 
-/* Signal-orange hairline at bottom edge */
-.parallax__visuals::after {
-  content: "";
+/* Thin overflow mask at the bottom boundary */
+.parallax__black-line-overflow {
   position: absolute;
-  bottom: 0;
+  bottom: -1px;
   left: 0;
   right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--signal-orange) 25%,
-    var(--signal-orange) 75%,
-    transparent 100%
-  );
-  opacity: 0.35;
+  height: 2px;
+  background: var(--obsidian-canvas);
   z-index: 25;
 }
 
-/* Content section — revealed after the pin releases */
+/* Content section — directly attached beneath the hero */
 .parallax__content {
+  position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 6rem 1.5rem;
+  padding: 4rem 1.5rem 1rem 1.5rem;
   background: var(--obsidian-canvas);
 }
+
 
 
