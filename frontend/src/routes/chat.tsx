@@ -4,20 +4,15 @@ import {
   ChevronDown,
   FileText,
   Plus,
-  Send,
   Paperclip,
   Check,
   ShieldCheck,
-  LogOut,
   Sliders,
   Sparkles,
-  Building,
   Lock,
   Trash2,
   Download,
   ImageIcon,
-  RefreshCw,
-  ExternalLink,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AI_Input_Search from '@/components/kokonutui/ai-input-search';
@@ -26,14 +21,28 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
 import {
   executeWorkbenchQuery,
-  fetchUserRecentQueries,
-  deleteUserRecentQuery,
-  clearAllUserRecentQueries,
   RetrievedPassage,
 } from '@/lib/rag-service';
-import { RecentQuery } from '@/lib/supabase';
+import {
+  ChatMessage,
+  ChatSession,
+  fetchUserChatSessions,
+  saveUserChatSession,
+  deleteUserChatSession,
+  clearAllUserChatSessions,
+} from '@/lib/chat-storage';
 import { BastionMark } from '@/components/site/parallax-hero';
 import ProfileDropdown from '@/components/kokonutui/profile-dropdown';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 export const Route = createFileRoute('/chat')({
   head: () => ({
@@ -57,21 +66,6 @@ export const Route = createFileRoute('/chat')({
   component: ChatPage,
 });
 
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  text: string;
-  routedTo?: string;
-  reason?: string;
-  steps?: string[];
-  passages?: RetrievedPassage[];
-  isDocumentQuery?: boolean;
-  imageUrl?: string;
-  revisedPrompt?: string;
-  isImage?: boolean;
-  attachedFileName?: string;
-}
-
 const MODELS = [
   { id: 'auto', name: 'Auto router', detail: 'Picks best sovereign tier per task', tag: 'recommended' },
   {
@@ -87,14 +81,25 @@ const MODELS = [
 
 export default function ChatPage() {
   const navigate = useNavigate();
-  const { user, profile, company, role, loading, logout } = useAuth();
+  const { user, profile, company, role, loading } = useAuth();
 
   const [selected, setSelected] = useState('auto');
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Chat sessions state
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [recentQueries, setRecentQueries] = useState<RecentQuery[]>([]);
-  const [loadingQueries, setLoadingQueries] = useState<boolean>(false);
+
+  // Modals for confirmation
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
+  const [isClearAllOpen, setIsClearAllOpen] = useState(false);
+
+  // Dropdown states for reasoning and sources per message
+  const [expandedReasoning, setExpandedReasoning] = useState<Record<string, boolean>>({});
+  const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
+
   const endRef = useRef<HTMLDivElement | null>(null);
 
   // Protected route check
@@ -103,6 +108,16 @@ export default function ChatPage() {
       navigate({ to: '/login' });
     }
   }, [loading, user, navigate]);
+
+  // Load chat sessions from storage
+  useEffect(() => {
+    const loaded = fetchUserChatSessions(user?.id);
+    setChatSessions(loaded);
+  }, [user?.id]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, busy]);
 
   const active = useMemo(
     () =>
@@ -115,76 +130,48 @@ export default function ChatPage() {
     [selected]
   );
 
-  // Load Recent Queries from DB (with localStorage fallback)
-  useEffect(() => {
-    let isMounted = true;
-    async function loadQueries() {
-      setLoadingQueries(true);
-      try {
-        const queries = await fetchUserRecentQueries(user?.id);
-        if (isMounted) {
-          setRecentQueries(queries);
-        }
-      } catch (err) {
-        console.error('Error fetching recent queries:', err);
-      } finally {
-        if (isMounted) setLoadingQueries(false);
-      }
-    }
-    loadQueries();
-    return () => {
-      isMounted = false;
-    };
-  }, [user?.id]);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, busy]);
-
-  // Suggestions customized by active user role
-  const suggestions = useMemo(() => {
-    if (role === 'tech') {
-      return [
-        'What is the CAN bus baud rate and BMS architecture?',
-        'Explain high voltage battery pack cooling circuits',
-        'Write a Python script to parse the vibration telemetry CSV',
-        'Generate an image of an aerodynamic EV chassis with exposed battery pack',
-      ];
-    }
-    if (role === 'finance') {
-      return [
-        'What is the Q3 FY26 Capex budget for Passenger EV division?',
-        'What are the battery cell cost projections with Agratas?',
-        'Write a Python script to project EBITDA margin growth',
-        'Summarize operating margin targets for Q4 FY26',
-      ];
-    }
-    if (role === 'support') {
-      return [
-        'What is the SLA for high-voltage battery warranty triage?',
-        'When does the customer loaner vehicle policy apply?',
-        'Show diagnostic fault codes for BMS communication errors',
-        'Write a summary of modular pack replacement criteria',
-      ];
-    }
-    // Admin or default
-    return [
-      'Check CAN-FD bus communication specs for Curvv EV [Tech]',
-      'Summarize Q3 FY26 Capex allocation and battery cost targets [Finance]',
-      'Generate an image of an enterprise sovereign AI node in a dark server rack',
-      'Write a Python data processor for CAN telemetry',
-    ];
-  }, [role]);
-
-  const handleDeleteRecentQuery = async (e: React.MouseEvent, queryId: string) => {
-    e.stopPropagation();
-    setRecentQueries((prev) => prev.filter((q) => q.id !== queryId));
-    await deleteUserRecentQuery(queryId, user?.id);
+  const handleNewRun = () => {
+    setCurrentSessionId(null);
+    setMessages([]);
   };
 
-  const handleClearAllRecentQueries = async () => {
-    setRecentQueries([]);
-    await clearAllUserRecentQueries(user?.id);
+  const handleSelectSession = (session: ChatSession) => {
+    setCurrentSessionId(session.id);
+    setMessages(session.messages || []);
+  };
+
+  const confirmDeleteSession = () => {
+    if (!sessionToDelete) return;
+    deleteUserChatSession(sessionToDelete, user?.id);
+    const updated = fetchUserChatSessions(user?.id);
+    setChatSessions(updated);
+    if (currentSessionId === sessionToDelete) {
+      setCurrentSessionId(null);
+      setMessages([]);
+    }
+    setSessionToDelete(null);
+  };
+
+  const confirmClearAll = () => {
+    clearAllUserChatSessions(user?.id);
+    setChatSessions([]);
+    setCurrentSessionId(null);
+    setMessages([]);
+    setIsClearAllOpen(false);
+  };
+
+  const toggleReasoning = (messageId: string) => {
+    setExpandedReasoning((prev) => ({
+      ...prev,
+      [messageId]: !prev[messageId],
+    }));
+  };
+
+  const toggleSources = (messageId: string) => {
+    setExpandedSources((prev) => ({
+      ...prev,
+      [messageId]: !prev[messageId],
+    }));
   };
 
   const handleDownloadImage = async (url: string, filename: string = 'sovereign-ai-render.png') => {
@@ -199,8 +186,7 @@ export default function ChatPage() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
-    } catch (e) {
-      // Direct window open fallback
+    } catch {
       window.open(url, '_blank');
     }
   };
@@ -212,30 +198,37 @@ export default function ChatPage() {
     const userMsgId = crypto.randomUUID();
     const queryDisplayText = text || `Uploaded file: ${attachedFile?.name}`;
 
-    setMessages((m) => [
-      ...m,
-      {
-        id: userMsgId,
-        role: 'user',
-        text: queryDisplayText,
-        attachedFileName: attachedFile?.name,
-      },
-    ]);
+    const userMsg: ChatMessage = {
+      id: userMsgId,
+      role: 'user',
+      text: queryDisplayText,
+      attachedFileName: attachedFile?.name,
+      createdAt: new Date().toISOString(),
+    };
 
-    // Prepend to recent queries state immediately for instant feedback
-    if (text) {
-      const optimisticRecent: RecentQuery = {
-        id: crypto.randomUUID(),
-        user_id: user?.id || '00000000-0000-0000-0000-000000000000',
-        company_id: profile?.company_id || '00000000-0000-0000-0000-000000000000',
-        query_text: text,
-        created_at: new Date().toISOString(),
-      };
-      setRecentQueries((prev) => [
-        optimisticRecent,
-        ...prev.filter((q) => q.query_text.toLowerCase() !== text.toLowerCase()),
-      ].slice(0, 20));
+    // Determine session ID
+    const sessionId = currentSessionId || crypto.randomUUID();
+    if (!currentSessionId) {
+      setCurrentSessionId(sessionId);
     }
+
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+
+    // Compute session title
+    const existingSession = chatSessions.find((s) => s.id === sessionId);
+    const sessionTitle = existingSession?.title || queryDisplayText.slice(0, 36);
+
+    const initialSession: ChatSession = {
+      id: sessionId,
+      userId: user?.id,
+      title: sessionTitle,
+      createdAt: existingSession?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      messages: newMessages,
+    };
+    saveUserChatSession(initialSession, user?.id);
+    setChatSessions(fetchUserChatSessions(user?.id));
 
     setBusy(true);
 
@@ -255,33 +248,58 @@ export default function ChatPage() {
         isWebSearch
       );
 
-      setMessages((m) => [
-        ...m,
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          text: queryRes.answer,
-          routedTo: queryRes.model,
-          reason: queryRes.reason,
-          steps: queryRes.steps,
-          passages: queryRes.passages,
-          isDocumentQuery: queryRes.isDocumentQuery,
-          imageUrl: queryRes.imageUrl,
-          revisedPrompt: queryRes.revisedPrompt,
-          isImage: queryRes.isImage,
-        },
-      ]);
+      const hasPassages = Boolean(queryRes.passages && queryRes.passages.length > 0);
+
+      const assistantMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        text: queryRes.answer,
+        routedTo: queryRes.model,
+        reason: queryRes.reason,
+        steps: queryRes.steps,
+        passages: queryRes.passages,
+        isDocumentQuery: queryRes.isDocumentQuery && hasPassages,
+        imageUrl: queryRes.imageUrl,
+        revisedPrompt: queryRes.revisedPrompt,
+        isImage: queryRes.isImage,
+        createdAt: new Date().toISOString(),
+      };
+
+      const finalMessages = [...newMessages, assistantMsg];
+      setMessages(finalMessages);
+
+      const finalSession: ChatSession = {
+        id: sessionId,
+        userId: user?.id,
+        title: sessionTitle,
+        createdAt: existingSession?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messages: finalMessages,
+      };
+      saveUserChatSession(finalSession, user?.id);
+      setChatSessions(fetchUserChatSessions(user?.id));
     } catch (err: any) {
-      setMessages((m) => [
-        ...m,
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          text: `Error synthesizing response: ${err?.message || 'Inference execution exception'}`,
-          routedTo: active.name,
-          reason: 'Local node execution fallback',
-        },
-      ]);
+      const errorMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        text: `Error synthesizing response: ${err?.message || 'Inference execution exception'}`,
+        routedTo: active.name,
+        reason: 'Local node execution fallback',
+        createdAt: new Date().toISOString(),
+      };
+      const finalMessages = [...newMessages, errorMsg];
+      setMessages(finalMessages);
+
+      const errorSession: ChatSession = {
+        id: sessionId,
+        userId: user?.id,
+        title: sessionTitle,
+        createdAt: existingSession?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messages: finalMessages,
+      };
+      saveUserChatSession(errorSession, user?.id);
+      setChatSessions(fetchUserChatSessions(user?.id));
     } finally {
       setBusy(false);
     }
@@ -309,23 +327,11 @@ export default function ChatPage() {
           </span>
         </div>
 
-        {/* Company Badge */}
-        <div className="border-b border-carbon-lift px-4 py-3 bg-carbon-lift/20">
-          <div className="flex items-center gap-2 text-caption font-mono text-warm-granite">
-            <Building className="h-3.5 w-3.5 text-signal-orange" />
-            <span className="truncate text-bone">{company?.name || 'Tata Motors'}</span>
-          </div>
-          <div className="mt-1 text-[10px] font-mono text-metric-green flex items-center gap-1">
-            <ShieldCheck className="h-3 w-3" />
-            <span>RLS Active: {role ? `[${role.toUpperCase()}] Scope` : 'Public'}</span>
-          </div>
-        </div>
-
         <div className="p-4 space-y-2">
           <button
             type="button"
-            onClick={() => setMessages([])}
-            className="flex w-full items-center gap-2 rounded-[3px] bg-carbon-lift px-3 py-2.5 text-body-sm text-bone transition-colors hover:bg-secondary cursor-pointer"
+            onClick={handleNewRun}
+            className="flex w-full items-center gap-2 rounded-[3px] bg-carbon-lift px-3 py-2.5 text-body-sm text-bone transition-colors hover:bg-secondary cursor-pointer font-medium"
           >
             <Plus className="h-4 w-4" /> New run
           </button>
@@ -340,48 +346,61 @@ export default function ChatPage() {
           )}
         </div>
 
-        {/* Recent Queries Area */}
+        {/* Recent Chats Area */}
         <div className="flex-1 overflow-y-auto px-4 py-2">
           <div className="flex items-center justify-between px-1 pb-2">
-            <div className="eyebrow text-warm-granite">Recent Queries</div>
-            {recentQueries.length > 0 && (
+            <div className="eyebrow text-warm-granite text-[10px] tracking-wider uppercase font-semibold">
+              Recent Chats
+            </div>
+            {chatSessions.length > 0 && (
               <button
                 type="button"
-                onClick={handleClearAllRecentQueries}
+                onClick={() => setIsClearAllOpen(true)}
                 className="text-[10px] font-mono text-warm-granite hover:text-red-400 transition cursor-pointer"
-                title="Clear all recent queries"
+                title="Clear all recent chats"
               >
                 Clear
               </button>
             )}
           </div>
 
-          {recentQueries.length === 0 ? (
+          {chatSessions.length === 0 ? (
             <div className="mt-2 rounded-[6px] border border-dashed border-carbon-lift/50 p-3 text-center">
-              <p className="font-mono text-[11px] text-warm-granite">No recent queries</p>
+              <p className="font-mono text-[11px] text-warm-granite">No recent chats</p>
               <p className="mt-1 text-[10px] text-warm-granite/60">
-                Queries you execute will be archived here.
+                Conversations will appear here.
               </p>
             </div>
           ) : (
             <div className="space-y-1">
-              {recentQueries.map((q) => (
-                <div
-                  key={q.id}
-                  onClick={() => send(q.query_text)}
-                  className="group flex items-center justify-between rounded-[4px] px-2 py-1.5 text-xs text-warm-granite transition-colors hover:bg-carbon-lift hover:text-bone cursor-pointer"
-                >
-                  <span className="truncate pr-1">› {q.query_text}</span>
-                  <button
-                    type="button"
-                    onClick={(e) => handleDeleteRecentQuery(e, q.id)}
-                    title="Delete query"
-                    className="opacity-0 group-hover:opacity-100 hover:text-red-400 p-1 transition-opacity cursor-pointer rounded hover:bg-carbon-lift/80 shrink-0"
+              {chatSessions.map((session) => {
+                const isActive = currentSessionId === session.id;
+                return (
+                  <div
+                    key={session.id}
+                    onClick={() => handleSelectSession(session)}
+                    className={cn(
+                      "group flex items-center justify-between rounded-[4px] px-2.5 py-2 text-xs transition-colors cursor-pointer",
+                      isActive
+                        ? "bg-carbon-lift text-bone font-medium border border-carbon-lift"
+                        : "text-warm-granite hover:bg-carbon-lift/50 hover:text-bone"
+                    )}
                   >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
+                    <span className="truncate pr-1">› {session.title}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSessionToDelete(session.id);
+                      }}
+                      title="Delete chat"
+                      className="opacity-0 group-hover:opacity-100 hover:text-red-400 p-0.5 transition-opacity cursor-pointer rounded hover:bg-carbon-lift shrink-0"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -477,39 +496,27 @@ export default function ChatPage() {
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6 }}
+                className="py-12"
               >
                 <div className="eyebrow text-warm-granite">
-                  authenticated session · {company?.name || 'tata motors'}
+                  authenticated session · {company?.name || 'Tata Motors'}
                 </div>
                 <h1 className="mt-3 text-heading tracking-[-0.031em] text-bone">
                   What are we forging today?
                 </h1>
                 <p className="mt-3 max-w-lg text-body text-warm-granite">
-                  Ask document-grounded questions, request code generation, or generate visual blueprints. Row Level Security enforces document access under role <span className="font-mono text-signal-orange font-bold">[{role || 'guest'}]</span>.
+                  Ask document-grounded questions, request code generation, or generate visual blueprints.
                 </p>
-
-                <div className="mt-6 grid gap-2.5 sm:grid-cols-2">
-                  {suggestions.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => send(s)}
-                      className="rounded-[8px] border border-carbon-lift bg-[#121212] p-3.5 text-left text-xs text-pale-stone transition hover:border-ash-stroke hover:text-bone cursor-pointer"
-                    >
-                      › {s}
-                    </button>
-                  ))}
-                </div>
               </motion.div>
             )}
 
-            <div className="space-y-8 mt-4">
+            <div className="space-y-6">
               {messages.map((m) => (
                 <motion.div
                   key={m.id}
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                  transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                   className={cn(m.role === 'user' && 'flex justify-end')}
                 >
                   {m.role === 'user' ? (
@@ -523,28 +530,115 @@ export default function ChatPage() {
                       )}
                     </div>
                   ) : (
-                    <div>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span className="eyebrow text-signal-orange">routed → {m.routedTo}</span>
-                        <span className="font-mono text-caption text-warm-granite">{m.reason}</span>
+                    <div className="space-y-3">
+                      {/* Assistant Top Controls: Reasoning & Grounded Citations Dropdowns */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Dropdown 1: Reasoning Dropdown */}
+                        <button
+                          type="button"
+                          onClick={() => toggleReasoning(m.id)}
+                          className="inline-flex items-center gap-1.5 rounded-[4px] border border-carbon-lift/80 bg-carbon-lift/30 px-2.5 py-1 text-[11px] font-mono text-warm-granite hover:text-bone hover:border-ash-stroke transition cursor-pointer"
+                        >
+                          <Sparkles className="h-3 w-3 text-signal-orange" />
+                          <span>{m.routedTo || 'Auto router'} · {expandedReasoning[m.id] ? 'Hide reasoning' : 'Show reasoning'}</span>
+                          <ChevronDown
+                            className={cn(
+                              'h-3 w-3 transition-transform duration-200',
+                              expandedReasoning[m.id] && 'rotate-180'
+                            )}
+                          />
+                        </button>
+
+                        {/* Dropdown 2: Grounded Citations Dropdown (ONLY if document query with passages) */}
+                        {m.isDocumentQuery && m.passages && m.passages.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => toggleSources(m.id)}
+                            className="inline-flex items-center gap-1.5 rounded-[4px] border border-carbon-lift/80 bg-carbon-lift/30 px-2.5 py-1 text-[11px] font-mono text-warm-granite hover:text-bone hover:border-ash-stroke transition cursor-pointer"
+                          >
+                            <FileText className="h-3 w-3 text-signal-orange" />
+                            <span>Grounded citations ({m.passages.length}) · {expandedSources[m.id] ? 'Hide' : 'Show'}</span>
+                            <ChevronDown
+                              className={cn(
+                                'h-3 w-3 transition-transform duration-200',
+                                expandedSources[m.id] && 'rotate-180'
+                              )}
+                            />
+                          </button>
+                        )}
                       </div>
 
-                      {m.steps && (
-                        <div className="mt-2.5 flex flex-wrap gap-2">
-                          {m.steps.map((s) => (
-                            <span
-                              key={s}
-                              className="rounded-[3px] border border-carbon-lift px-2 py-0.5 font-mono text-[11px] text-pale-stone bg-carbon-lift/30"
-                            >
-                              {s}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      {/* Expanded Reasoning Panel */}
+                      <AnimatePresence>
+                        {expandedReasoning[m.id] && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="rounded-[8px] border border-carbon-lift bg-[#111111] p-3 text-xs font-mono space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-signal-orange font-semibold">ROUTED → {m.routedTo}</span>
+                                <span className="text-[10px] text-warm-granite/70">({m.reason})</span>
+                              </div>
+                              {m.steps && m.steps.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                  {m.steps.map((s, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="rounded-[3px] border border-carbon-lift/60 bg-carbon-lift/40 px-2 py-0.5 text-[10px] text-pale-stone"
+                                    >
+                                      {s}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* Expanded Grounded Citations Panel */}
+                      <AnimatePresence>
+                        {expandedSources[m.id] && m.passages && m.passages.length > 0 && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="space-y-2 rounded-[8px] border border-carbon-lift bg-[#111111] p-3">
+                              <div className="flex items-center gap-2 text-caption font-mono uppercase text-warm-granite">
+                                <FileText className="h-3.5 w-3.5 text-signal-orange" />
+                                Grounded Retrieval Citations ({m.passages.length} passages):
+                              </div>
+                              <div className="grid gap-2">
+                                {m.passages.map((p) => (
+                                  <div
+                                    key={p.id}
+                                    className="rounded border border-ash-stroke/30 bg-carbon-lift/30 p-2.5 text-xs text-pale-stone"
+                                  >
+                                    <div className="flex items-center justify-between gap-2 font-mono text-[11px] text-bone font-semibold mb-1">
+                                      <span>{p.documentTitle}</span>
+                                      <span className="rounded bg-signal-orange/20 px-1.5 py-0.2 text-[10px] text-signal-orange uppercase">
+                                        {p.category}
+                                      </span>
+                                    </div>
+                                    <div className="text-warm-granite line-clamp-3 leading-relaxed">{p.content}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
 
                       {/* Generated Image rendering with download support */}
                       {m.imageUrl && (
-                        <div className="mt-4 overflow-hidden rounded-[12px] border border-[#262626] bg-[#0f0f0f] p-3 shadow-xl">
+                        <div className="mt-2 overflow-hidden rounded-[12px] border border-[#262626] bg-[#0f0f0f] p-3 shadow-xl">
                           <div className="relative group overflow-hidden rounded-[8px] bg-black/50">
                             <img
                               src={m.imageUrl}
@@ -580,37 +674,12 @@ export default function ChatPage() {
                         </div>
                       )}
 
-                      {/* Document Citations if any */}
-                      {m.passages && m.passages.length > 0 && (
-                        <div className="mt-4 space-y-2 rounded-[8px] border border-carbon-lift bg-[#121212] p-3">
-                          <div className="flex items-center gap-2 text-caption font-mono uppercase text-warm-granite">
-                            <FileText className="h-3.5 w-3.5 text-signal-orange" />
-                            Grounded Retrieval Citations ({m.passages.length} passages):
-                          </div>
-                          <div className="grid gap-2">
-                            {m.passages.map((p) => (
-                              <div
-                                key={p.id}
-                                className="rounded border border-ash-stroke/30 bg-carbon-lift/30 p-2.5 text-xs text-pale-stone"
-                              >
-                                <div className="flex items-center justify-between gap-2 font-mono text-[11px] text-bone font-semibold mb-1">
-                                  <span>{p.documentTitle}</span>
-                                  <span className="rounded bg-signal-orange/20 px-1.5 py-0.2 text-[10px] text-signal-orange uppercase">
-                                    {p.category}
-                                  </span>
-                                </div>
-                                <div className="text-warm-granite line-clamp-2">{p.content}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="mt-4 whitespace-pre-wrap text-body-sm text-bone/90 font-sans leading-relaxed">
+                      {/* Main Message Text Content */}
+                      <div className="whitespace-pre-wrap text-body-sm text-bone/90 font-sans leading-relaxed pt-1">
                         {m.text}
                       </div>
 
-                      <div className="mt-4 flex items-center gap-3 border-t border-carbon-lift/50 pt-2 text-[11px] font-mono text-warm-granite">
+                      <div className="mt-3 flex items-center gap-3 border-t border-carbon-lift/40 pt-2 text-[11px] font-mono text-warm-granite">
                         <span className="flex items-center gap-1 text-metric-green">
                           <ShieldCheck className="h-3 w-3" /> Sealed in Access Log
                         </span>
@@ -628,8 +697,7 @@ export default function ChatPage() {
                   <AITextLoading
                     texts={[
                       'Evaluating Postgres RLS security...',
-                      `Searching ${role ? role.toUpperCase() : 'company'} document chunks...`,
-                      'Running sovereign model inference...',
+                      'Executing sovereign model inference...',
                       'Synthesizing audited response...',
                       'Polishing technical output...',
                     ]}
@@ -662,6 +730,52 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+
+      {/* Delete Single Chat Session Alert Dialog */}
+      <AlertDialog open={Boolean(sessionToDelete)} onOpenChange={(isOpen) => !isOpen && setSessionToDelete(null)}>
+        <AlertDialogContent className="border-carbon-lift bg-[#121212] text-bone">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-bone">Delete this chat?</AlertDialogTitle>
+            <AlertDialogDescription className="text-warm-granite text-xs">
+              Are you sure you want to delete this chat session? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-carbon-lift bg-[#181818] text-bone hover:bg-carbon-lift hover:text-white cursor-pointer">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteSession}
+              className="bg-red-600 text-white hover:bg-red-700 font-medium cursor-pointer"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Clear All Chats Alert Dialog */}
+      <AlertDialog open={isClearAllOpen} onOpenChange={setIsClearAllOpen}>
+        <AlertDialogContent className="border-carbon-lift bg-[#121212] text-bone">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-bone">Clear all recent chats?</AlertDialogTitle>
+            <AlertDialogDescription className="text-warm-granite text-xs">
+              Are you sure you want to clear all your saved chat sessions? This will permanently delete your conversation history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-carbon-lift bg-[#181818] text-bone hover:bg-carbon-lift hover:text-white cursor-pointer">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmClearAll}
+              className="bg-red-600 text-white hover:bg-red-700 font-medium cursor-pointer"
+            >
+              Clear All
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
