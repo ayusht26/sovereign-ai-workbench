@@ -21,6 +21,7 @@
 
   --font-sans: var(--font-geist);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display);
 
   --text-caption: 0.75rem;
   --text-caption--line-height: 1;
@@ -89,6 +90,8 @@
 :root {
   --font-geist: "Geist", Inter, system-ui, sans-serif;
   --font-geist-mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-ultra: "Ultra", serif;
+  --font-display: "Ultra", serif;
 
   --obsidian-canvas: oklch(0.176 0 0);
   --carbon-lift: oklch(0.244 0.005 60);
@@ -278,33 +281,26 @@
 
 .parallax__content-block {
   text-align: center;
-  max-width: 800px;
-  padding: 0 1.5rem;
+  width: 100%;
+  max-width: 100%;
+  padding: 0 1rem;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
 }
 
 .parallax__brand-title {
-  margin-top: 0.5rem;
-  font-size: clamp(3.75rem, 10vw, 8.5rem);
-  line-height: 0.9;
-  letter-spacing: -0.025em;
-  font-weight: 800;
-  color: var(--bone);
-  text-transform: uppercase;
-  text-shadow: 0 4px 32px rgba(0, 0, 0, 0.95), 0 0 90px rgba(0, 0, 0, 0.7);
-}
-
-.parallax__brand-tagline {
-  margin-top: 1.25rem;
-  font-family: var(--font-geist-mono);
-  font-size: clamp(0.8rem, 1.5vw, 1.1rem);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--pale-stone);
-  opacity: 0.85;
-  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.95);
+  margin: 0;
+  font-family: var(--font-ultra), "Ultra", serif;
+  font-size: clamp(3.25rem, 9.5vw, 9.5rem);
+  line-height: 0.95;
+  letter-spacing: 0.015em;
+  font-weight: 400;
+  color: var(--chalk);
+  text-transform: none;
+  text-shadow: none;
+  white-space: nowrap;
 }
 
 /* Bottom fade — smoothly blends the foreground mountain base into the black site canvas */
@@ -330,19 +326,6 @@
     rgba(18, 18, 18, 0.002) 98.2%,
     transparent 100%
   );
-  z-index: 20;
-  pointer-events: none;
-}
-
-/* Top fade — gentle ambient vignette behind Nav */
-.parallax__visuals::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 180px;
-  background: linear-gradient(to bottom, var(--obsidian-canvas) 0%, transparent 100%);
   z-index: 20;
   pointer-events: none;
 }

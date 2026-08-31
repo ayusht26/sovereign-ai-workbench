@@ -106,15 +106,12 @@ export function ParallaxHero() {
               className="parallax__layer-img"
             />
 
-            {/* Layer 3 — Brand Name & Tagline */}
+            {/* Layer 3 — Brand Name */}
             <div data-parallax-layer="3" className="parallax__layer-title">
               <div className="parallax__content-block select-none">
                 <h1 className="parallax__brand-title">
-                  BASTION
+                  Bastion
                 </h1>
-                <p className="parallax__brand-tagline">
-                  Sovereign Agentic AI Workbench
-                </p>
               </div>
             </div>
 
@@ -136,9 +133,8 @@ export function ParallaxHero() {
 
       {/* Content section — seamless transition immediately below the hero */}
       <section className="parallax__content">
-        <div className="flex flex-col items-center gap-3">
-          <BastionMark className="h-16 w-16 text-signal-orange" color="currentColor" />
-          <span className="eyebrow tracking-[0.25em] text-warm-granite/70">Bastion OS</span>
+        <div className="flex flex-col items-center">
+          <BastionMark className="h-14 w-14 text-signal-orange" color="currentColor" />
         </div>
       </section>
     </div>
