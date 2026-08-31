@@ -9,19 +9,29 @@ import {
   Check,
   ShieldCheck,
   LogOut,
-  User,
   Sliders,
   Sparkles,
   Building,
-  Info,
   Lock,
+  Trash2,
+  Download,
+  ImageIcon,
+  RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import AI_Input_Search from '@/components/kokonutui/ai-input-search';
 import AITextLoading from '@/components/kokonutui/ai-text-loading';
 import { cn } from '@/lib/utils';
-import { InteractiveHoverButton } from '@/components/ui/interactive-hover-button';
 import { useAuth } from '@/lib/auth-context';
-import { executeWorkbenchQuery } from '@/lib/rag-service';
+import {
+  executeWorkbenchQuery,
+  fetchUserRecentQueries,
+  deleteUserRecentQuery,
+  clearAllUserRecentQueries,
+  RetrievedPassage,
+} from '@/lib/rag-service';
+import { RecentQuery } from '@/lib/supabase';
 import { BastionMark } from '@/components/site/parallax-hero';
 
 export const Route = createFileRoute('/chat')({
@@ -46,10 +56,23 @@ export const Route = createFileRoute('/chat')({
   component: ChatPage,
 });
 
-type ModelId = 'auto' | 'reasoning' | 'coding' | 'vision' | 'lite';
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  routedTo?: string;
+  reason?: string;
+  steps?: string[];
+  passages?: RetrievedPassage[];
+  isDocumentQuery?: boolean;
+  imageUrl?: string;
+  revisedPrompt?: string;
+  isImage?: boolean;
+  attachedFileName?: string;
+}
 
 const MODELS = [
-  { id: 'auto', name: 'Auto router', detail: 'Picks the best tier per task', tag: 'recommended' },
+  { id: 'auto', name: 'Auto router', detail: 'Picks best sovereign tier per task', tag: 'recommended' },
   {
     id: 'reasoning',
     name: 'Qwen3.6-27B',
@@ -57,20 +80,21 @@ const MODELS = [
     tag: 'reasoning',
   },
   { id: 'coding', name: 'Qwen3-Coder-Next', detail: 'Patches, scripts, sandbox runs', tag: 'code' },
-  { id: 'vision', name: 'Qwen3-VL-32B', detail: 'Scans, tables, handwriting', tag: 'vision' },
+  { id: 'vision', name: 'Qwen3-VL-32B', detail: 'Scans, tables, visual diffusion', tag: 'vision' },
   { id: 'lite', name: 'Qwen3.5-8B', detail: 'Fast drafts, low GPU load', tag: 'lite' },
 ];
 
 export default function ChatPage() {
   const navigate = useNavigate();
-  const { user, profile, company, role, loading: authLoading, logout } = useAuth();
+  const { user, profile, company, role, logout } = useAuth();
 
   const [selected, setSelected] = useState('auto');
   const [open, setOpen] = useState(false);
-  const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const [messages, setMessages] = useState([]);
-  const endRef = useRef(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [recentQueries, setRecentQueries] = useState<RecentQuery[]>([]);
+  const [loadingQueries, setLoadingQueries] = useState<boolean>(false);
+  const endRef = useRef<HTMLDivElement | null>(null);
 
   const active = useMemo(
     () =>
@@ -83,6 +107,28 @@ export default function ChatPage() {
     [selected]
   );
 
+  // Load Recent Queries from DB (with localStorage fallback)
+  useEffect(() => {
+    let isMounted = true;
+    async function loadQueries() {
+      setLoadingQueries(true);
+      try {
+        const queries = await fetchUserRecentQueries(user?.id);
+        if (isMounted) {
+          setRecentQueries(queries);
+        }
+      } catch (err) {
+        console.error('Error fetching recent queries:', err);
+      } finally {
+        if (isMounted) setLoadingQueries(false);
+      }
+    }
+    loadQueries();
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id]);
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, busy]);
@@ -94,7 +140,7 @@ export default function ChatPage() {
         'What is the CAN bus baud rate and BMS architecture?',
         'Explain high voltage battery pack cooling circuits',
         'Write a Python script to parse the vibration telemetry CSV',
-        'Check thermal runaway mitigation specifications',
+        'Generate an image of an aerodynamic EV chassis with exposed battery pack',
       ];
     }
     if (role === 'finance') {
@@ -117,64 +163,119 @@ export default function ChatPage() {
     return [
       'Check CAN-FD bus communication specs for Curvv EV [Tech]',
       'Summarize Q3 FY26 Capex allocation and battery cost targets [Finance]',
-      'What is the warranty replacement protocol SLA? [Support]',
+      'Generate an image of an enterprise sovereign AI node in a dark server rack',
       'Write a Python data processor for CAN telemetry',
     ];
   }, [role]);
 
-  const send = async (raw) => {
-    const text = (raw ?? input).trim();
-    if (!text || busy) return;
-    setInput('');
+  const handleDeleteRecentQuery = async (e: React.MouseEvent, queryId: string) => {
+    e.stopPropagation();
+    setRecentQueries((prev) => prev.filter((q) => q.id !== queryId));
+    await deleteUserRecentQuery(queryId, user?.id);
+  };
+
+  const handleClearAllRecentQueries = async () => {
+    setRecentQueries([]);
+    await clearAllUserRecentQueries(user?.id);
+  };
+
+  const handleDownloadImage = async (url: string, filename: string = 'sovereign-ai-render.png') => {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (e) {
+      // Direct window open fallback
+      window.open(url, '_blank');
+    }
+  };
+
+  const send = async (raw?: string, isWebSearch: boolean = false, attachedFile?: File | null) => {
+    const text = (raw ?? '').trim();
+    if ((!text && !attachedFile) || busy) return;
 
     const userMsgId = crypto.randomUUID();
-    setMessages((m) => [...m, { id: userMsgId, role: 'user', text }]);
+    const queryDisplayText = text || `Uploaded file: ${attachedFile?.name}`;
+
+    setMessages((m) => [
+      ...m,
+      {
+        id: userMsgId,
+        role: 'user',
+        text: queryDisplayText,
+        attachedFileName: attachedFile?.name,
+      },
+    ]);
+
+    // Prepend to recent queries state immediately for instant feedback
+    if (text) {
+      const optimisticRecent: RecentQuery = {
+        id: crypto.randomUUID(),
+        user_id: user?.id || '00000000-0000-0000-0000-000000000000',
+        company_id: profile?.company_id || '00000000-0000-0000-0000-000000000000',
+        query_text: text,
+        created_at: new Date().toISOString(),
+      };
+      setRecentQueries((prev) => [
+        optimisticRecent,
+        ...prev.filter((q) => q.query_text.toLowerCase() !== text.toLowerCase()),
+      ].slice(0, 20));
+    }
+
     setBusy(true);
 
     try {
       const activeUserId = user?.id || '00000000-0000-0000-0000-000000000000';
       const activeCompanyId = profile?.company_id || '00000000-0000-0000-0000-000000000000';
       const activeRole = role || 'support';
+      const companyName = company?.name || 'Tata Motors';
 
       const queryRes = await executeWorkbenchQuery(
-        text,
+        text || `Please analyze attached document: ${attachedFile?.name}`,
         activeUserId,
         activeCompanyId,
         activeRole,
-        selected === 'auto' ? 'auto' : active.name
+        companyName,
+        selected === 'auto' ? 'auto' : active.name,
+        isWebSearch
       );
 
-      // Simulate local node inference delay for realistic UX
-      setTimeout(() => {
-        setMessages((m) => [
-          ...m,
-          {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            text: queryRes.answer,
-            routedTo: queryRes.model,
-            reason: queryRes.reason,
-            steps: queryRes.steps,
-            passages: queryRes.passages,
-            isDocumentQuery: queryRes.isDocumentQuery,
-          },
-        ]);
-        setBusy(false);
-      }, 1000);
-    } catch (err) {
-      setTimeout(() => {
-        setMessages((m) => [
-          ...m,
-          {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            text: `Error processing query locally: ${err?.message || 'Execution exception'}`,
-            routedTo: active.name,
-            reason: 'Local node execution error',
-          },
-        ]);
-        setBusy(false);
-      }, 500);
+      setMessages((m) => [
+        ...m,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          text: queryRes.answer,
+          routedTo: queryRes.model,
+          reason: queryRes.reason,
+          steps: queryRes.steps,
+          passages: queryRes.passages,
+          isDocumentQuery: queryRes.isDocumentQuery,
+          imageUrl: queryRes.imageUrl,
+          revisedPrompt: queryRes.revisedPrompt,
+          isImage: queryRes.isImage,
+        },
+      ]);
+    } catch (err: any) {
+      setMessages((m) => [
+        ...m,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          text: `Error synthesizing response: ${err?.message || 'Inference execution exception'}`,
+          routedTo: active.name,
+          reason: 'Local node execution fallback',
+        },
+      ]);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -231,22 +332,50 @@ export default function ChatPage() {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4">
-          <div className="eyebrow px-1 pb-3 text-warm-granite">Recent Queries</div>
-          {[
-            'High-voltage architecture & CAN-FD',
-            'Q3 FY26 Capex allocation',
-            'Warranty replacement protocol SLA',
-            'Python vibration telemetry parser',
-          ].map((h) => (
-            <div
-              key={h}
-              onClick={() => send(h)}
-              className="cursor-pointer truncate rounded-[3px] px-2 py-1.5 text-xs text-warm-granite transition-colors hover:bg-carbon-lift hover:text-bone"
-            >
-              › {h}
+        {/* Recent Queries Area */}
+        <div className="flex-1 overflow-y-auto px-4 py-2">
+          <div className="flex items-center justify-between px-1 pb-2">
+            <div className="eyebrow text-warm-granite">Recent Queries</div>
+            {recentQueries.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAllRecentQueries}
+                className="text-[10px] font-mono text-warm-granite hover:text-red-400 transition cursor-pointer"
+                title="Clear all recent queries"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {recentQueries.length === 0 ? (
+            <div className="mt-2 rounded-[6px] border border-dashed border-carbon-lift/50 p-3 text-center">
+              <p className="font-mono text-[11px] text-warm-granite">No recent queries</p>
+              <p className="mt-1 text-[10px] text-warm-granite/60">
+                Queries you execute will be archived here.
+              </p>
             </div>
-          ))}
+          ) : (
+            <div className="space-y-1">
+              {recentQueries.map((q) => (
+                <div
+                  key={q.id}
+                  onClick={() => send(q.query_text)}
+                  className="group flex items-center justify-between rounded-[4px] px-2 py-1.5 text-xs text-warm-granite transition-colors hover:bg-carbon-lift hover:text-bone cursor-pointer"
+                >
+                  <span className="truncate pr-1">› {q.query_text}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteRecentQuery(e, q.id)}
+                    title="Delete query"
+                    className="opacity-0 group-hover:opacity-100 hover:text-red-400 p-1 transition-opacity cursor-pointer rounded hover:bg-carbon-lift/80 shrink-0"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="border-t border-carbon-lift p-4">
@@ -262,7 +391,7 @@ export default function ChatPage() {
         {/* Header */}
         <header className="flex h-16 items-center justify-between gap-4 border-b border-carbon-lift px-5">
           <div className="flex items-center gap-3">
-            {/* Model Selector */}
+            {/* Sovereign Model Selector */}
             <div className="relative">
               <button
                 type="button"
@@ -367,7 +496,7 @@ export default function ChatPage() {
                   What are we forging today?
                 </h1>
                 <p className="mt-3 max-w-lg text-body text-warm-granite">
-                  Ask document-grounded questions or describe a coding / reasoning task. Row Level Security enforces that your query only retrieves documents assigned to role <span className="font-mono text-signal-orange font-bold">[{role || 'guest'}]</span>.
+                  Ask document-grounded questions, request code generation, or generate visual blueprints. Row Level Security enforces document access under role <span className="font-mono text-signal-orange font-bold">[{role || 'guest'}]</span>.
                 </p>
 
                 <div className="mt-6 grid gap-2.5 sm:grid-cols-2">
@@ -397,6 +526,12 @@ export default function ChatPage() {
                   {m.role === 'user' ? (
                     <div className="max-w-[85%] rounded-[10px] bg-bone px-4 py-3 text-body-sm text-obsidian-canvas font-medium shadow-sm">
                       {m.text}
+                      {m.attachedFileName && (
+                        <div className="mt-2 inline-flex items-center gap-1.5 rounded bg-black/10 px-2 py-0.5 text-[11px] font-mono">
+                          <Paperclip className="h-3 w-3" />
+                          <span>{m.attachedFileName}</span>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div>
@@ -418,6 +553,44 @@ export default function ChatPage() {
                         </div>
                       )}
 
+                      {/* Generated Image rendering with download support */}
+                      {m.imageUrl && (
+                        <div className="mt-4 overflow-hidden rounded-[12px] border border-[#262626] bg-[#0f0f0f] p-3 shadow-xl">
+                          <div className="relative group overflow-hidden rounded-[8px] bg-black/50">
+                            <img
+                              src={m.imageUrl}
+                              alt={m.revisedPrompt || 'Sovereign AI Asset'}
+                              className="w-full max-h-[500px] object-contain rounded-[8px] transition-transform duration-300 group-hover:scale-[1.01]"
+                            />
+                            <div className="absolute top-3 right-3 flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadImage(m.imageUrl!, `sovereign-ai-${Date.now()}.png`)}
+                                className="flex items-center gap-1.5 rounded-lg bg-black/80 backdrop-blur-md border border-white/20 px-3 py-1.5 text-xs font-semibold text-white shadow-lg transition hover:bg-signal-orange hover:text-black cursor-pointer"
+                                title="Download generated image"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                                <span>Download</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex items-center justify-between text-caption font-mono text-warm-granite">
+                            <div className="flex items-center gap-1.5 text-signal-orange">
+                              <ImageIcon className="h-3.5 w-3.5" />
+                              <span>Diffusion Asset Generated</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadImage(m.imageUrl!, `sovereign-ai-${Date.now()}.png`)}
+                              className="text-signal-orange hover:underline flex items-center gap-1 cursor-pointer text-xs"
+                            >
+                              <Download className="h-3 w-3" /> Save to disk
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Document Citations if any */}
                       {m.passages && m.passages.length > 0 && (
                         <div className="mt-4 space-y-2 rounded-[8px] border border-carbon-lift bg-[#121212] p-3">
@@ -426,7 +599,7 @@ export default function ChatPage() {
                             Grounded Retrieval Citations ({m.passages.length} passages):
                           </div>
                           <div className="grid gap-2">
-                            {m.passages.map((p, i) => (
+                            {m.passages.map((p) => (
                               <div
                                 key={p.id}
                                 className="rounded border border-ash-stroke/30 bg-carbon-lift/30 p-2.5 text-xs text-pale-stone"
@@ -460,17 +633,19 @@ export default function ChatPage() {
                 </motion.div>
               ))}
 
+              {/* Kokonut UI AI Text Loading */}
               {busy && (
-                <div className="flex items-center gap-3">
-                  <span className="h-2 w-2 shrink-0 rounded-full bg-signal-orange animate-ping" />
+                <div className="py-2">
                   <AITextLoading
                     texts={[
-                      'Evaluating Postgres RLS access scope...',
+                      'Evaluating Postgres RLS security...',
                       `Searching ${role ? role.toUpperCase() : 'company'} document chunks...`,
-                      'Running local model inference...',
+                      'Running sovereign model inference...',
                       'Synthesizing audited response...',
+                      'Polishing technical output...',
                     ]}
-                    className="!text-body-sm !font-normal"
+                    className="!text-lg !font-semibold text-bone"
+                    interval={1400}
                   />
                 </div>
               )}
@@ -479,36 +654,21 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Composer Area */}
-        <div className="border-t border-carbon-lift">
-          <div className="mx-auto max-w-3xl px-5 py-4">
-            <div className="rounded-[10px] border border-carbon-lift bg-[#101010] focus-within:border-ash-stroke">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    send();
-                  }
-                }}
-                rows={2}
-                placeholder={`Ask ${role ? `as [${role.toUpperCase()}]` : ''} regarding company documents or general coding…`}
-                className="w-full resize-none bg-transparent px-4 py-3 text-body-sm text-bone outline-none placeholder:text-warm-granite font-sans"
-              />
-              <div className="flex items-center justify-between px-3 pb-3">
-                <span className="flex items-center gap-1.5 font-mono text-[11px] text-warm-granite">
-                  <Lock className="h-3 w-3 text-signal-orange" />
-                  RLS Active: {role ? role.toUpperCase() : 'Public'}
-                </span>
-                <InteractiveHoverButton
-                  type="button"
-                  onClick={() => send()}
-                  disabled={busy || !input.trim()}
-                  text="Run"
-                  className="rounded-md h-8 min-w-20 px-3 text-xs font-semibold cursor-pointer"
-                />
-              </div>
+        {/* Kokonut UI AI Input Search Box Area */}
+        <div className="border-t border-carbon-lift bg-obsidian-canvas/90 backdrop-blur-md px-5 py-4">
+          <div className="mx-auto max-w-3xl">
+            <AI_Input_Search
+              placeholder={`Ask ${role ? `as [${role.toUpperCase()}]` : ''} regarding company docs, code, or images…`}
+              searchLabel="Web Search"
+              disabled={busy}
+              onSubmit={(text, isWebSearch, file) => send(text, isWebSearch, file)}
+            />
+            <div className="mt-2 flex items-center justify-between px-2 text-[11px] font-mono text-warm-granite">
+              <span className="flex items-center gap-1.5">
+                <Lock className="h-3 w-3 text-signal-orange" />
+                RLS Active: {role ? role.toUpperCase() : 'Public'}
+              </span>
+              <span>Enter to run · Shift+Enter for newline</span>
             </div>
           </div>
         </div>
