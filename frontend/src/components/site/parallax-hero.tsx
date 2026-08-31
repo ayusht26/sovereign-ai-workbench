@@ -45,23 +45,22 @@ export function ParallaxHero() {
     const ctx = gsap.context(() => {
       const tl = gsap.timeline({
         scrollTrigger: {
-          trigger: wrapper,       // outer wrapper is the measurable trigger
+          trigger: header,
           start: "top top",
-          end: "+=200%",          // 200vh of scroll distance
-          pin: header,            // GSAP pins the header — no CSS sticky needed
-          pinSpacing: true,       // adds spacer automatically
+          end: "+=100%",
+          pin: true,
+          pinSpacing: true,
           scrub: 0,
           anticipatePin: 1,
         },
       });
 
-      // Layer yPercent values: background moves the most (70%), foreground the least (10%)
-      // This makes the guy appear to "rise" relative to the fast-moving background
+      // Real depth parallax: foreground moves fastest, background moves slowest
       const layers = [
-        { layer: "1", yPercent: 70 },   // far sky — moves most
-        { layer: "2", yPercent: 55 },   // mountains
-        { layer: "3", yPercent: 40 },   // title text
-        { layer: "4", yPercent: 10 },   // foreground figure — barely moves
+        { layer: "1", yPercent: -15 },  // sky — farthest, drifts the least
+        { layer: "2", yPercent: -35 },  // mountains — mid-ground
+        { layer: "3", yPercent: -50 },  // title — clears out ahead of the figure
+        { layer: "4", yPercent: -75 },  // foreground figure — closest, moves fastest
       ];
 
       layers.forEach((layerObj, idx) => {

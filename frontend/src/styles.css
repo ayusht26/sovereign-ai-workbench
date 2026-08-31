@@ -257,6 +257,14 @@
   object-position: center center;
   will-change: transform;
   display: block;
+  z-index: 1;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+}
+
+/* Foreground figure explicitly above the title */
+.parallax__layer-img[data-parallax-layer="4"] {
+  z-index: 3;
 }
 
 /* Title / content layer */
@@ -268,7 +276,7 @@
   align-items: center;
   justify-content: center;
   will-change: transform;
-  z-index: 10;
+  z-index: 2;
 }
 
 .parallax__content-block {
@@ -282,10 +290,10 @@
 
 .parallax__brand-title {
   margin-top: 0.5rem;
-  font-size: clamp(3.25rem, 8.5vw, 7.5rem);
-  line-height: 0.95;
-  letter-spacing: 0.16em;
-  font-weight: 350;
+  font-size: clamp(3.5rem, 9vw, 8rem);
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+  font-weight: 700;
   color: var(--bone);
   text-transform: uppercase;
   text-shadow: 0 4px 32px rgba(0, 0, 0, 0.95), 0 0 90px rgba(0, 0, 0, 0.7);
