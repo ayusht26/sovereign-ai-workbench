@@ -2,14 +2,14 @@
 
 import { Link } from "@tanstack/react-router";
 import { motion, useScroll, useTransform } from "motion/react";
-import { Menu, X } from "lucide-react";
+import { Menu, X, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { BastionMark } from "@/components/site/parallax-hero";
 import { HyperText } from "@/components/ui/hyper-text";
-
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import { SlideTextButton } from "@/components/ui/slide-text-button";
+import { useAuth } from "@/lib/auth-context";
 
 const links = [
   { label: "Product", to: "/" as const, hash: "product" },
@@ -19,6 +19,7 @@ const links = [
 
 export function Nav() {
   const [open, setOpen] = useState(false);
+  const { user, profile, role } = useAuth();
   const { scrollY } = useScroll();
   const bg = useTransform(scrollY, [0, 120], ["rgba(16,16,16,0)", "rgba(16,16,16,0.92)"]);
   const border = useTransform(scrollY, [0, 120], ["rgba(29,26,24,0)", "rgba(29,26,24,1)"]);
@@ -49,12 +50,11 @@ export function Nav() {
       className="fixed top-0 right-0 left-0 z-50 border-b backdrop-blur-[2px]"
     >
       <nav className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-6">
-        <Link
-          to="/"
-          onClick={handleLogoClick}
-          className="group flex items-center gap-2.5"
-        >
-          <BastionMark className="h-5 w-5 transition-transform duration-300 group-hover:scale-110" color="var(--signal-orange)" />
+        <Link to="/" onClick={handleLogoClick} className="group flex items-center gap-2.5">
+          <BastionMark
+            className="h-5 w-5 transition-transform duration-300 group-hover:scale-110"
+            color="var(--signal-orange)"
+          />
           <HyperText
             as="span"
             duration={600}
@@ -78,6 +78,15 @@ export function Nav() {
               {l.label}
             </Link>
           ))}
+          {role === "admin" && (
+            <Link
+              to="/admin"
+              className="flex items-center gap-1 text-body-sm uppercase text-signal-orange font-semibold transition-colors hover:text-signal-orange/80"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Admin
+            </Link>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -86,11 +95,21 @@ export function Nav() {
             text="Open workbench"
             className="hidden sm:inline-flex h-9 px-4 text-body-sm rounded-md"
           />
-          <SlideTextButton
-            to="/login"
-            text="Log in"
-            className="h-9 px-4 rounded-md"
-          />
+
+          {user && profile ? (
+            <Link
+              to="/profile"
+              className="flex items-center gap-2 rounded-md border border-carbon-lift bg-carbon-lift/50 px-3 py-1.5 text-xs text-bone hover:border-ash-stroke transition"
+            >
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-signal-orange/20 text-[10px] font-bold text-signal-orange">
+                {profile.username.slice(0, 2).toUpperCase()}
+              </span>
+              <span className="hidden sm:inline">@{profile.username}</span>
+            </Link>
+          ) : (
+            <SlideTextButton to="/login" text="Log in" className="h-9 px-4 rounded-md" />
+          )}
+
           <button
             type="button"
             aria-label="Toggle menu"
@@ -105,7 +124,7 @@ export function Nav() {
       <div
         className={cn(
           "overflow-hidden border-t border-carbon-lift bg-obsidian-canvas md:hidden",
-          open ? "max-h-80" : "max-h-0",
+          open ? "max-h-96" : "max-h-0",
         )}
         style={{ transition: "max-height 300ms cubic-bezier(0.16,1,0.3,1)" }}
       >
@@ -124,6 +143,16 @@ export function Nav() {
               {l.label}
             </Link>
           ))}
+          {role === "admin" && (
+            <Link
+              to="/admin"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-1.5 text-body-sm uppercase text-signal-orange font-semibold"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Admin Console
+            </Link>
+          )}
           <InteractiveHoverButton
             to="/chat"
             text="Open workbench"
