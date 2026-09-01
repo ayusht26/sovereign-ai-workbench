@@ -58,7 +58,7 @@ provider:
 router:
   model: "llama3.2:3b"
   fallback: "llama3.2:3b"
-  keep_alive: "-1"
+  keep_alive: -1
   temperature: 0
   max_tokens: 40
 
@@ -77,15 +77,11 @@ router:
 #
 models:
   general:
-    local: qwen3.5:9b
-    api: openai/gpt-oss-120b:free
-    api_fallback: openai/gpt-oss-20b:free
-    fallback: llama3.1:8b
+    api: openrouter/free
+    api_fallback: nvidia/nemotron-3-ultra-550b-a55b:free
   coding:
-    local: qwen2.5-coder:7b
-    api: openai/gpt-oss-120b:free
-    api_fallback: openai/gpt-oss-20b:free
-    fallback: llama3.1:8b
+    api: openrouter/free
+    api_fallback: nvidia/nemotron-3-ultra-550b-a55b:free
   vision:
     local: qwen2.5vl:7b
     api: qwen/qwen3-vl-235b-a22b-thinking

@@ -78,13 +78,25 @@ class Config:
         return self._raw.get("router", {}).get("fallback", "llama3.2:3b")
 
     @property
-    def router_keep_alive(self) -> str:
-        return self._raw.get("router", {}).get("keep_alive", "-1")
+    def router_keep_alive(self) -> int | str:
+        """
+        Ollama wants an int (seconds, or -1 to keep the model loaded
+        forever) or a Go duration string like "5m" — never a quoted
+        "-1", which Ollama's duration parser rejects with a 400.
+        """
+        val = self._raw.get("router", {}).get("keep_alive", -1)
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return val
+        
     @property
     def provider_mode(self) -> str:
         """'local' (Ollama, air-gapped) or 'api' (OpenRouter / OpenAI-compatible)."""
         return self._raw.get("provider", {}).get("mode", "local")
-
+    @property
+    def provider_request_timeout_s(self) -> int:
+        return self._raw.get("provider", {}).get("request_timeout_s", 45)
     @property
     def provider_base_url(self) -> str:
         return self._raw.get("provider", {}).get("base_url", "https://openrouter.ai/api/v1")

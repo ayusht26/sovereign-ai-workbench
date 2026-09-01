@@ -143,7 +143,7 @@ class LLMClient:
             model=model,
             messages=messages,
             options=options,
-            keep_alive=keep_alive if keep_alive is not None else "-1",
+            keep_alive=keep_alive if keep_alive is not None else -1,
         )
         return ChatResult(content=response.message.content or "", model=model, provider="local")
 
