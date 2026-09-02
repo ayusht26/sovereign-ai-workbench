@@ -105,7 +105,9 @@ class Config:
     def provider_api_key_env(self) -> str:
         """Name of the environment variable holding the API key — never the key itself."""
         return self._raw.get("provider", {}).get("api_key_env", "OPENROUTER_API_KEY")
-
+    @property
+    def provider_request_timeout_s(self) -> int:
+        return self._raw.get("provider", {}).get("request_timeout_s", 45)
     @property
     def provider_app_url(self) -> str | None:
         return self._raw.get("provider", {}).get("app_url")

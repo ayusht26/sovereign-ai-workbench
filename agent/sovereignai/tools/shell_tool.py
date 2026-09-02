@@ -60,15 +60,26 @@ def _is_allowed(command: str) -> tuple[bool, str]:
             f"Use sandbox_exec for arbitrary code execution."
         )
 
+    # Python is restricted to version checks only.
+    if binary in ("python", "python3"):
+        if len(parts) != 2 or parts[1] not in ("--version", "-V"):
+            return False, (
+                "python/python3 is only allowed for --version checks. "
+                "Use sandbox_exec for anything else."
+            )
+
     # Extra validation for git
     if binary == "git":
         if len(parts) < 2:
             return False, "git requires a subcommand."
+
         subcommand = parts[1].lower()
+
         if subcommand not in _GIT_ALLOWED_SUBCOMMANDS:
             return False, (
                 f"git {subcommand} is not allowed. "
-                f"Allowed git subcommands: {', '.join(sorted(_GIT_ALLOWED_SUBCOMMANDS))}"
+                f"Allowed git subcommands: "
+                f"{', '.join(sorted(_GIT_ALLOWED_SUBCOMMANDS))}"
             )
 
     return True, ""
@@ -100,6 +111,7 @@ class ShellTool(Tool):
 
     def run(self, command: str, timeout: int = 15) -> ToolResult:
         allowed, reason = _is_allowed(command)
+
         if not allowed:
             return ToolResult.fail(f"Command denied: {reason}")
 
@@ -111,14 +123,18 @@ class ShellTool(Tool):
                 text=True,
                 timeout=timeout,
             )
+
             return ToolResult.ok({
                 "stdout": result.stdout,
                 "stderr": result.stderr,
                 "exit_code": result.returncode,
                 "command": command,
             })
+
         except subprocess.TimeoutExpired:
-            return ToolResult.fail(f"Command timed out after {timeout}s: {command}")
+            return ToolResult.fail(
+                f"Command timed out after {timeout}s: {command}"
+            )
+
         except Exception as e:
             return ToolResult.fail(str(e))
-

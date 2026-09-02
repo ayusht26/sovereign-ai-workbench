@@ -50,15 +50,24 @@ class Tool(ABC):
 
     name: str = ""
     description: str = ""
+
     # OpenAI-style function schema — used for Ollama's tool-calling protocol
     json_schema: dict[str, Any] = {}
 
     # Which task categories can use this tool
-    categories: list[str] = ["general", "coding", "vision", "spreadsheet", "document_qa", "planning"]
+    categories: list[str] = [
+        "general",
+        "coding",
+        "vision",
+        "spreadsheet",
+        "document_qa",
+        "planning",
+    ]
 
     @abstractmethod
     def run(self, **kwargs: Any) -> ToolResult:
         ...
+
 
     def as_ollama_tool(self) -> dict[str, Any]:
         """Return the Ollama-compatible tool definition."""
@@ -83,20 +92,42 @@ class ToolRegistry:
     @classmethod
     def register_defaults(cls) -> None:
         """Import and register all built-in tools."""
-        from sovereignai.tools.fs_tools import FsRead, FsWrite, FsList, FsGlob
+        from sovereignai.tools.fs_tools import (
+            FsRead,
+            FsWrite,
+            FsList,
+            FsGlob,
+        )
         from sovereignai.tools.sandbox_tool import SandboxExec
         from sovereignai.tools.shell_tool import ShellTool
-        from sovereignai.tools.sheet_tool import SheetRead, SheetWrite, SheetCreate
-        from sovereignai.tools.docgen_tool import GenDocx, GenPptx, GenXlsx
+        from sovereignai.tools.sheet_tool import (
+            SheetRead,
+            SheetWrite,
+            SheetCreate,
+        )
+        from sovereignai.tools.docgen_tool import (
+            GenDocx,
+            GenPptx,
+            GenXlsx,
+            GenPdf,
+        )
         from sovereignai.tools.vision_tool import VisionTool
         from sovereignai.tools.rag_tool import RagSearch
 
         cls._all_tools = [
-            FsRead(), FsWrite(), FsList(), FsGlob(),
+            FsRead(),
+            FsWrite(),
+            FsList(),
+            FsGlob(),
             SandboxExec(),
             ShellTool(),
-            SheetRead(), SheetWrite(), SheetCreate(),
-            GenDocx(), GenPptx(), GenXlsx(),
+            SheetRead(),
+            SheetWrite(),
+            SheetCreate(),
+            GenDocx(),
+            GenPptx(),
+            GenXlsx(),
+            GenPdf(),
             VisionTool(),
             RagSearch(),
         ]
@@ -106,6 +137,7 @@ class ToolRegistry:
         """Return a registry filtered to tools available for this category."""
         if not cls._all_tools:
             cls.register_defaults()
+
         tools = [t for t in cls._all_tools if category in t.categories]
         return cls(tools)
 
@@ -119,5 +151,5 @@ class ToolRegistry:
                     return tool.run(**args)
                 except Exception as e:
                     return ToolResult.fail(f"Tool {name} raised: {e}")
-        return ToolResult.fail(f"Unknown tool: {name}")
 
+        return ToolResult.fail(f"Unknown tool: {name}")

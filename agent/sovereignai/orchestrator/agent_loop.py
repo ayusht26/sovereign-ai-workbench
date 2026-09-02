@@ -15,7 +15,7 @@ import json
 import re
 import time
 from typing import Any, Generator
-
+from sovereignai.orchestrator.session_context import current_user_role
 from sovereignai.config import get_config
 from sovereignai.orchestrator import audit_log
 from sovereignai.orchestrator.router import get_router, RoutingDecision
@@ -41,24 +41,18 @@ _TOOL_HINT = {
     "planning":     "You may use all available tools. Plan step-by-step before acting.",
 }
 
-
 def _api_tool_call_instructions(tool_schemas: list[dict]) -> str:
-    """
-    API-mode models don't get native tools=; function-calling format varies
-    too much across OpenRouter-hosted models to rely on. Describe tools in
-    the prompt and ask for a JSON block instead — _extract_tool_calls_from_text
-    already knows how to parse this.
-    """
     lines = [
-        "To call a tool, output a fenced JSON block like this and nothing else in that turn:",
+        "To call a tool, output a fenced JSON block with this exact shape and nothing else in that turn:",
         '```json\n{"name": "<tool_name>", "arguments": {...}}\n```',
+        "The `arguments` object MUST match the tool's parameter schema exactly — use the exact field names and nesting shown below. Do not invent or rename fields.",
         "Available tools:",
     ]
     for schema in tool_schemas:
         fn = schema.get("function", schema)
-        lines.append(f"- {fn.get('name')}: {fn.get('description', '')}")
+        params = json.dumps(fn.get("parameters", {}), ensure_ascii=False)
+        lines.append(f"- {fn.get('name')}: {fn.get('description', '')}\n  parameters schema: {params}")
     return "\n".join(lines)
-
 
 def _extract_tool_calls_from_text(raw_text: str, valid_tool_names: set[str]) -> list[dict]:
     """Extract tool calls if the model printed JSON tool calls into text instead of using native API."""
@@ -114,9 +108,29 @@ def _extract_tool_calls_from_text(raw_text: str, valid_tool_names: set[str]) -> 
                 pos = end_idx
             else:
                 pos = idx + 7
+    if not calls:
+        calls = _extract_hermes_style_tool_calls(raw_text, valid_tool_names)
 
     return calls
-
+def _extract_hermes_style_tool_calls(raw_text: str, valid_tool_names: set[str]) -> list[dict]:
+    """Parses <tool_call>name<arg_key>k</arg_key><arg_value>v</arg_value>...</tool_call> —
+    the native tool-calling format some open-weight models (Qwen/Hermes-tuned) emit
+    regardless of what the system prompt asks for."""
+    calls = []
+    for block_match in re.finditer(r'<tool_call>(.*?)</tool_call>', raw_text, re.DOTALL):
+        block = block_match.group(1)
+        name_match = re.match(r'\s*([a-zA-Z0-9_\-]+)', block)
+        if not name_match or name_match.group(1) not in valid_tool_names:
+            continue
+        args = {}
+        for k, v in re.findall(r'<arg_key>(.*?)</arg_key>\s*<arg_value>(.*?)</arg_value>', block, re.DOTALL):
+            k, v = k.strip(), v.strip()
+            try:
+                args[k] = json.loads(v)  # recovers lists/dicts/numbers/bools, e.g. the "slides" array
+            except json.JSONDecodeError:
+                args[k] = v
+        calls.append({"name": name_match.group(1), "arguments": args})
+    return calls
 
 def _run_stream(client, model, messages, tools, session, step) -> Generator[dict[str, Any], None, tuple[str, list[dict]]]:
     """Consumes one streamed turn, yielding UI events, and returns (thought_text, tool_calls)."""
@@ -136,6 +150,7 @@ def _run_stream(client, model, messages, tools, session, step) -> Generator[dict
     return "".join(thought_chunks), tool_calls
 
 
+
 def run_agent_turn(
     session: Session,
     user_message: str,
@@ -145,6 +160,7 @@ def run_agent_turn(
     start_time = time.time()
 
     session.append("user", user_message)
+    current_user_role.set(getattr(session, "user_role", "viewer"))
 
     if model_override:
         decision = RoutingDecision(
@@ -235,19 +251,17 @@ def run_agent_turn(
                 tool_args = call.get("arguments") or {}
 
                 yield {"kind": "tool_call_start", "name": tool_name, "args": tool_args, "step": step}
-
                 result = registry.dispatch(tool_name, tool_args)
                 session.tool_calls_made += 1
-
-                yield {
-                    "kind": "tool_call_result",
-                    "name": tool_name,
-                    "args": tool_args,
-                    "result": result.to_dict(),
-                    "step": step,
-                }
+                yield {"kind": "tool_call_result", "name": tool_name, "args": tool_args, "result": result.to_dict(), "step": step}
                 tool_calls_made.append({"name": tool_name, "args": tool_args, "result": result.to_dict(), "step": step})
-                tool_results.append({"role": "tool", "content": result.to_json(), "name": tool_name})
+
+                if cfg.provider_mode == "api":
+                    # Prompt-based tool calling — no native tool_call_id exists, so
+                    # role:"tool" is invalid here. Feed the result back as a user turn.
+                    tool_results.append({"role": "user", "content": f"Result of `{tool_name}`:\n{result.to_json()}"})
+                else:
+                    tool_results.append({"role": "tool", "content": result.to_json(), "name": tool_name})
 
             messages_for_model.extend(tool_results)
             continue

@@ -149,6 +149,7 @@ class GenPptx(Tool):
             prs = Presentation()
 
             # Title slide
+            _LAYOUT_MAP = {"title_only": 5, "bullet": 1, "blank": 6}
             title_layout = prs.slide_layouts[0]
             slide = prs.slides.add_slide(title_layout)
             slide.shapes.title.text = title
@@ -157,7 +158,8 @@ class GenPptx(Tool):
 
             # Content slides
             for s in slides:
-                layout = prs.slide_layouts[1]  # Title + Content
+                layout_idx = _LAYOUT_MAP.get(s.get("layout", "bullet"), 1)
+                layout = prs.slide_layouts[layout_idx]
                 sl = prs.slides.add_slide(layout)
                 sl.shapes.title.text = s.get("title", "")
                 if s.get("bullets") and len(sl.placeholders) > 1:
@@ -183,7 +185,34 @@ class GenPptx(Tool):
             return ToolResult.fail("python-pptx not installed. Run: pip install python-pptx")
         except Exception as e:
             return ToolResult.fail(str(e))
+        
+        
+class GenPdf(Tool):
+    name = "generate_pdf"
+    description = "Generate a PDF report. Internally creates a Word document then converts it to PDF."
+    categories = ["general", "planning", "document_qa"]
+    json_schema = GenDocx.json_schema  # same shape — title + sections
 
+    def run(self, output_path: str, title: str, sections: list[dict], **kw) -> ToolResult:
+        import subprocess, tempfile
+        docx_result = GenDocx().run(output_path=str(Path(tempfile.mktemp(suffix=".docx"))), title=title, sections=sections, **kw)
+        if not docx_result.success:
+            return docx_result
+        p = _validate_path(output_path)
+        if p is None:
+            return ToolResult.fail(f"Path '{output_path}' outside workspace.")
+        try:
+            subprocess.run(
+                ["soffice", "--headless", "--convert-to", "pdf", "--outdir", str(p.parent), docx_result.data["path"]],
+                check=True, timeout=60,
+            )
+            converted = Path(docx_result.data["path"]).with_suffix(".pdf")
+            converted.rename(p)
+            return ToolResult.ok({"path": str(p)}, file_path=str(p))
+        except FileNotFoundError:
+            return ToolResult.fail("LibreOffice (soffice) not found — install it for PDF export.")
+        except Exception as e:
+            return ToolResult.fail(str(e))
 
 class GenXlsx(Tool):
     name = "generate_xlsx"

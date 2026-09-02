@@ -73,6 +73,17 @@ class LLMClient:
             yield from self._chat_stream_api(model, messages)
         else:
             yield from self._chat_stream_local(model, messages, tools, num_ctx)
+    
+
+    def chat_vision(self, model: str, prompt: str, image_b64_list: list[str]) -> ChatResult:
+        if self.mode == "api":
+            content = [{"type": "text", "text": prompt}]
+            for b64 in image_b64_list:
+                content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
+            return self._chat_api(model, [{"role": "user", "content": content}], temperature=0.2, max_tokens=None)
+        else:
+            return self._chat_local(model, [{"role": "user", "content": prompt, "images": image_b64_list}],
+                                     temperature=0.2, max_tokens=None, keep_alive=None)
 
     # ── local streaming (Ollama, native tool-calling) ───────────────────
     def _chat_stream_local(self, model, messages, tools, num_ctx):
@@ -104,7 +115,7 @@ class LLMClient:
                 f"provider.mode is 'api' but ${cfg.provider_api_key_env} is not set."
             )
         payload = {"model": model, "messages": messages, "stream": True}
-        with httpx.Client(timeout=self._cfg.ollama_timeout) as client:
+        with httpx.Client(timeout=self._cfg.provider_request_timeout_s) as client:
             with client.stream(
                 "POST",
                 f"{cfg.provider_base_url.rstrip('/')}/chat/completions",
@@ -161,7 +172,7 @@ class LLMClient:
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
 
-        with httpx.Client(timeout=self._cfg.ollama_timeout) as client:
+        with httpx.Client(timeout=self._cfg.provider_request_timeout_s) as client:
             resp = client.post(
                 f"{cfg.provider_base_url.rstrip('/')}/chat/completions",
                 headers={
