@@ -10,7 +10,7 @@ identically whether provider.mode is "local" (Ollama, native tool-calling)
 or "api" (OpenRouter, prompt-based JSON tool calls).
 """
 from __future__ import annotations
-
+import ast 
 import json
 import re
 import time
@@ -41,18 +41,44 @@ _TOOL_HINT = {
     "planning":     "You may use all available tools. Plan step-by-step before acting.",
 }
 
-def _api_tool_call_instructions(tool_schemas: list[dict]) -> str:
-    lines = [
-        "To call a tool, output a fenced JSON block with this exact shape and nothing else in that turn:",
-        '```json\n{"name": "<tool_name>", "arguments": {...}}\n```',
-        "The `arguments` object MUST match the tool's parameter schema exactly — use the exact field names and nesting shown below. Do not invent or rename fields.",
-        "Available tools:",
-    ]
-    for schema in tool_schemas:
-        fn = schema.get("function", schema)
-        params = json.dumps(fn.get("parameters", {}), ensure_ascii=False)
-        lines.append(f"- {fn.get('name')}: {fn.get('description', '')}\n  parameters schema: {params}")
-    return "\n".join(lines)
+def _build_assistant_message(content: str, tool_calls: list[dict], provider_mode: str) -> dict:
+    msg = {"role": "assistant", "content": content}
+    if provider_mode == "api" and tool_calls and all(c.get("id") for c in tool_calls):
+        msg["tool_calls"] = [
+            {"id": c["id"], "type": "function",
+             "function": {"name": c["name"], "arguments": json.dumps(c.get("arguments") or {})}}
+            for c in tool_calls
+        ]
+    return msg
+
+def _extract_mistral_style_tool_calls(raw_text: str, valid_tool_names: set[str]) -> list[dict]:
+    """Parses <|tool_call_start|>[func(kwarg=val, ...)]<|tool_call_end|> —
+    Python-call-literal syntax some Mistral/Llama-tuned models emit."""
+    calls = []
+    for block_match in re.finditer(r'<\|tool_call_start\|>(.*?)<\|tool_call_end\|>', raw_text, re.DOTALL):
+        block = block_match.group(1).strip()
+        try:
+            tree = ast.parse(block, mode="eval")
+        except SyntaxError:
+            continue
+        node = tree.body
+        elements = node.elts if isinstance(node, ast.List) else [node]
+        for el in elements:
+            if not isinstance(el, ast.Call):
+                continue
+            fn_name = getattr(el.func, "id", None)
+            if fn_name not in valid_tool_names:
+                continue
+            args, ok = {}, True
+            for kw in el.keywords:
+                try:
+                    args[kw.arg] = ast.literal_eval(kw.value)
+                except Exception:
+                    ok = False
+                    break
+            if ok:
+                calls.append({"name": fn_name, "arguments": args})
+    return calls
 
 def _extract_tool_calls_from_text(raw_text: str, valid_tool_names: set[str]) -> list[dict]:
     """Extract tool calls if the model printed JSON tool calls into text instead of using native API."""
@@ -110,8 +136,12 @@ def _extract_tool_calls_from_text(raw_text: str, valid_tool_names: set[str]) -> 
                 pos = idx + 7
     if not calls:
         calls = _extract_hermes_style_tool_calls(raw_text, valid_tool_names)
-
+    if not calls:
+        calls = _extract_hermes_style_tool_calls(raw_text, valid_tool_names)
+    if not calls:
+        calls = _extract_mistral_style_tool_calls(raw_text, valid_tool_names)
     return calls
+
 def _extract_hermes_style_tool_calls(raw_text: str, valid_tool_names: set[str]) -> list[dict]:
     """Parses <tool_call>name<arg_key>k</arg_key><arg_value>v</arg_value>...</tool_call> —
     the native tool-calling format some open-weight models (Qwen/Hermes-tuned) emit
@@ -148,7 +178,6 @@ def _run_stream(client, model, messages, tools, session, step) -> Generator[dict
         if stream_chunk.tool_calls:
             tool_calls.extend(stream_chunk.tool_calls)
     return "".join(thought_chunks), tool_calls
-
 
 
 def run_agent_turn(
@@ -189,8 +218,6 @@ def run_agent_turn(
 
     hint = _TOOL_HINT.get(decision.category, "")
     system_content = f"{_AGENT_SYSTEM}\n\n{hint}"
-    if cfg.provider_mode == "api" and registry.tools:
-        system_content += "\n\n" + _api_tool_call_instructions(registry.tool_schemas())
 
     messages_for_model = []
     if not any(m["role"] == "system" for m in session.messages_for_model()):
@@ -198,9 +225,7 @@ def run_agent_turn(
     messages_for_model.extend(session.messages_for_model())
 
     client = get_llm_client()
-    # Native tool schemas only make sense in local (Ollama) mode — API mode uses the
-    # prompt-based instructions above instead.
-    tools_for_call = registry.tool_schemas() if (registry.tools and cfg.provider_mode == "local") else None
+    tools_for_call = registry.tool_schemas() if registry.tools else None
 
     tool_calls_made: list[dict] = []
     response_text = ""
@@ -238,7 +263,7 @@ def run_agent_turn(
                     yield {"kind": "error", "message": str(e2)}
                     return ""
 
-        messages_for_model.append({"role": "assistant", "content": thought_text})
+        messages_for_model.append(_build_assistant_message(thought_text, current_tool_calls, cfg.provider_mode))
 
         if not current_tool_calls and registry.tools:
             known_tool_names = {t.name for t in registry.tools}
@@ -249,6 +274,7 @@ def run_agent_turn(
             for call in current_tool_calls:
                 tool_name = call["name"]
                 tool_args = call.get("arguments") or {}
+                call_id = call.get("id")
 
                 yield {"kind": "tool_call_start", "name": tool_name, "args": tool_args, "step": step}
                 result = registry.dispatch(tool_name, tool_args)
@@ -256,9 +282,9 @@ def run_agent_turn(
                 yield {"kind": "tool_call_result", "name": tool_name, "args": tool_args, "result": result.to_dict(), "step": step}
                 tool_calls_made.append({"name": tool_name, "args": tool_args, "result": result.to_dict(), "step": step})
 
-                if cfg.provider_mode == "api":
-                    # Prompt-based tool calling — no native tool_call_id exists, so
-                    # role:"tool" is invalid here. Feed the result back as a user turn.
+                if cfg.provider_mode == "api" and call.get("id"):
+                    tool_results.append({"role": "tool", "tool_call_id": call["id"], "content": result.to_json(), "name": tool_name})
+                elif cfg.provider_mode == "api":
                     tool_results.append({"role": "user", "content": f"Result of `{tool_name}`:\n{result.to_json()}"})
                 else:
                     tool_results.append({"role": "tool", "content": result.to_json(), "name": tool_name})

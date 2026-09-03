@@ -7,30 +7,39 @@ is the single seam between "local" (Ollama, air-gapped) and "api"
 (OpenRouter or any OpenAI-compatible endpoint) — everything above this
 layer is provider-agnostic.
 
+API mode uses NATIVE tool-calling (payload["tools"], provider.require_
+parameters=True) rather than prompt-based JSON extraction — empirically
+confirmed more reliable across OpenRouter's provider fan-out than asking
+models to emit JSON in plain text. Text-based extraction in agent_loop.py
+is kept as a defensive fallback only, not the primary path.
+
 Provider mode is set by the administrator in config (provider.mode),
 never hardcoded and never chosen by the agent itself.
 """
 from __future__ import annotations
 
 import os
-from typing import NamedTuple
 import json
+from typing import NamedTuple, Generator
+
 import httpx
 import ollama
 
 from sovereignai.config import get_config
-from typing import Generator
+
 
 class ChatResult(NamedTuple):
     content: str
     model: str
     provider: str  # "local" | "api"
 
+
 class StreamChunk(NamedTuple):
     content: str = ""
     thinking: str = ""
-    tool_calls: list[dict] | None = None   # [{"name": str, "arguments": dict}, ...]
+    tool_calls: list[dict] | None = None   # [{"id": str|None, "name": str, "arguments": dict}, ...]
     done: bool = False
+
 
 class LLMClient:
     """Routes chat() calls to Ollama (local) or an OpenAI-compatible API (api mode)."""
@@ -60,7 +69,7 @@ class LLMClient:
         if not force_local and self.mode == "api":
             return self._chat_api(model, messages, temperature, max_tokens)
         return self._chat_local(model, messages, temperature, max_tokens, keep_alive)
-    
+
     def chat_stream(
         self,
         model: str,
@@ -70,10 +79,9 @@ class LLMClient:
         num_ctx: int | None = None,
     ) -> "Generator[StreamChunk, None, None]":
         if self.mode == "api":
-            yield from self._chat_stream_api(model, messages)
+            yield from self._chat_stream_api(model, messages, tools)
         else:
             yield from self._chat_stream_local(model, messages, tools, num_ctx)
-    
 
     def chat_vision(self, model: str, prompt: str, image_b64_list: list[str]) -> ChatResult:
         if self.mode == "api":
@@ -102,20 +110,38 @@ class LLMClient:
                 fn = tc.function if hasattr(tc, "function") else tc.get("function", {})
                 name = getattr(fn, "name", None) if not isinstance(fn, dict) else fn.get("name")
                 args = getattr(fn, "arguments", None) if not isinstance(fn, dict) else fn.get("arguments")
-                tool_calls.append({"name": name, "arguments": args or {}})
+                call_id = getattr(tc, "id", None) if not isinstance(tc, dict) else tc.get("id")
+                tool_calls.append({"id": call_id, "name": name, "arguments": args or {}})
             yield StreamChunk(content=content or "", thinking=thinking or "", tool_calls=tool_calls or None)
         yield StreamChunk(done=True)
 
-    # ── api streaming (OpenRouter SSE, prompt-based tool calls only) ────
-    def _chat_stream_api(self, model, messages):
+    # ── api streaming (OpenRouter SSE, NATIVE tool-calling) ─────────────
+    def _chat_stream_api(self, model, messages, tools=None):
         cfg = self._cfg
         api_key = os.environ.get(cfg.provider_api_key_env, "")
         if not api_key:
             raise RuntimeError(
                 f"provider.mode is 'api' but ${cfg.provider_api_key_env} is not set."
             )
-        payload = {"model": model, "messages": messages, "stream": True}
-        with httpx.Client(timeout=self._cfg.provider_request_timeout_s) as client:
+        payload = {"model": model, "messages": messages, "stream": True, "temperature": 0}
+        if tools:
+            payload["tools"] = tools
+
+        # require_parameters=True restricts routing to providers that actually
+        # support the requested params (here: native tool-calling) — confirmed
+        # empirically far more reliable than letting the model guess a text format.
+        provider_prefs = dict(cfg.provider_routing or {})
+        if tools:
+            provider_prefs.setdefault("require_parameters", True)
+        if provider_prefs:
+            payload["provider"] = provider_prefs
+
+        # Accumulate streamed tool-call fragments by index — OpenAI-style
+        # streaming sends the function name and arguments incrementally
+        # across multiple deltas, not as one atomic block like Ollama does.
+        tool_call_acc: dict[int, dict] = {}
+
+        with httpx.Client(timeout=cfg.provider_request_timeout_s) as client:
             with client.stream(
                 "POST",
                 f"{cfg.provider_base_url.rstrip('/')}/chat/completions",
@@ -138,10 +164,38 @@ class LLMClient:
                         data = json.loads(data_str)
                     except json.JSONDecodeError:
                         continue
-                    delta = (data.get("choices") or [{}])[0].get("delta", {})
+
+                    choice = (data.get("choices") or [{}])[0]
+                    delta = choice.get("delta", {})
+
                     content = delta.get("content") or ""
+                    reasoning = delta.get("reasoning") or ""
                     if content:
                         yield StreamChunk(content=content)
+                    elif reasoning:
+                        yield StreamChunk(thinking=reasoning)
+
+                    for tc_delta in delta.get("tool_calls") or []:
+                        idx = tc_delta.get("index", 0)
+                        entry = tool_call_acc.setdefault(idx, {"id": None, "name": None, "arguments": ""})
+                        if tc_delta.get("id"):
+                            entry["id"] = tc_delta["id"]
+                        fn = tc_delta.get("function") or {}
+                        if fn.get("name"):
+                            entry["name"] = fn["name"]
+                        if fn.get("arguments"):
+                            entry["arguments"] += fn["arguments"]
+
+                    if choice.get("finish_reason") and tool_call_acc:
+                        finalized = []
+                        for entry in tool_call_acc.values():
+                            try:
+                                args = json.loads(entry["arguments"] or "{}")
+                            except json.JSONDecodeError:
+                                args = {}
+                            finalized.append({"id": entry["id"], "name": entry["name"], "arguments": args})
+                        yield StreamChunk(tool_calls=finalized)
+                        tool_call_acc = {}
         yield StreamChunk(done=True)
 
     # ── local (Ollama) ──────────────────────────────────────────────────
@@ -171,8 +225,10 @@ class LLMClient:
         payload: dict = {"model": model, "messages": messages, "temperature": temperature}
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        if cfg.provider_routing:
+            payload["provider"] = cfg.provider_routing
 
-        with httpx.Client(timeout=self._cfg.provider_request_timeout_s) as client:
+        with httpx.Client(timeout=cfg.provider_request_timeout_s) as client:
             resp = client.post(
                 f"{cfg.provider_base_url.rstrip('/')}/chat/completions",
                 headers={
