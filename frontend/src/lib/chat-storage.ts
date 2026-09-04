@@ -1,25 +1,27 @@
 import { RetrievedPassage } from "./rag-service";
+import { GeneratedFile } from "./file-generator";
 
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
-  routedTo?: string;
-  reason?: string;
-  steps?: string[];
-  passages?: RetrievedPassage[];
-  isDocumentQuery?: boolean;
-  imageUrl?: string;
-  revisedPrompt?: string;
-  isImage?: boolean;
-  attachedFileName?: string;
-  attachedImageDataUrl?: string;
-  createdAt?: string;
+  routedTo?: string | undefined;
+  reason?: string | undefined;
+  steps?: string[] | undefined;
+  passages?: RetrievedPassage[] | undefined;
+  isDocumentQuery?: boolean | undefined;
+  imageUrl?: string | undefined;
+  revisedPrompt?: string | undefined;
+  isImage?: boolean | undefined;
+  generatedFiles?: GeneratedFile[] | undefined;
+  attachedFileName?: string | undefined;
+  attachedImageDataUrl?: string | undefined;
+  createdAt?: string | undefined;
 }
 
 export interface ChatSession {
   id: string;
-  userId?: string;
+  userId?: string | undefined;
   title: string;
   createdAt: string;
   updatedAt: string;

@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import AI_Input_Search from '@/components/kokonutui/ai-input-search';
 import AITextLoading from '@/components/kokonutui/ai-text-loading';
 import { MarkdownMessage } from '@/components/ui/markdown-message';
+import { FileDeliverableCard } from '@/components/chat/file-card';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -276,6 +277,7 @@ function ChatPage() {
         imageUrl: queryRes.imageUrl,
         revisedPrompt: queryRes.revisedPrompt,
         isImage: queryRes.isImage,
+        generatedFiles: queryRes.generatedFiles,
         createdAt: new Date().toISOString(),
       };
 
@@ -702,6 +704,15 @@ function ChatPage() {
                       <div className="text-body-sm text-bone font-sans leading-relaxed pt-1">
                         <MarkdownMessage content={m.text} />
                       </div>
+
+                      {/* Generated Deliverables (docx, xlsx, pptx, txt) with Instant Download */}
+                      {m.generatedFiles && m.generatedFiles.length > 0 && (
+                        <div className="mt-3 space-y-3">
+                          {m.generatedFiles.map((file) => (
+                            <FileDeliverableCard key={file.id} file={file} />
+                          ))}
+                        </div>
+                      )}
 
                       <div className="mt-3 flex items-center gap-3 border-t border-carbon-lift/40 pt-2 text-[11px] font-mono text-warm-granite">
                         <span className="flex items-center gap-1 text-metric-green">
