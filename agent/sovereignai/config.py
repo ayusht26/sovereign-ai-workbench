@@ -358,3 +358,4 @@ def open_config_in_editor() -> None:
     editor = os.environ.get("EDITOR", "notepad" if sys.platform == "win32" else "nano")
     subprocess.run([editor, str(_USER_CONFIG)])
 
+cfg = get_config()

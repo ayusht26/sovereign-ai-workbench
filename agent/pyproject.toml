@@ -42,6 +42,12 @@ dependencies = [
     "python-dateutil>=2.9.0",
     # Watchdog for KB watch mode
     "watchdog>=5.0.3",
+     # ...existing entries...
+    "chromadb>=0.5.23",   # TODO: remove once Qdrant migration is verified end-to-end
+    # New: Qdrant (RAG migration)
+    "qdrant-client>=1.10.0",
+    "fastembed>=0.3.0",
+    "tiktoken>=0.7.0",
 ]
 
 [project.optional-dependencies]

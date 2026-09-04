@@ -41,7 +41,7 @@ hardware_profile: "8gb_vram" # 8gb_vram | 16gb_vram | 24gb_vram | server_multi_g
 # It must exist in the environment variable specified by api_key_env.
 #
 provider:
-  mode: "local" # local | api
+  mode: "api" # local | api
   base_url: "https://openrouter.ai/api/v1"
   api_key_env: "OPENROUTER_API_KEY"
   app_url: null # optional HTTP-Referer / application URL

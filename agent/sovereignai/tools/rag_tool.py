@@ -1,60 +1,129 @@
 """
-rag_tool.py — Local knowledge base search via ChromaDB.
+rag_tool.py — Local knowledge base search.
 
-Returns top-k chunks with source filenames and scores.
-The model is instructed to cite source files in its responses.
+Searches the SovereignAI Qdrant knowledge base using hybrid
+dense + BM25 retrieval.
+
+Security:
+- The user's role comes from the authenticated session context.
+- The LLM never supplies or controls the role.
+- RBAC is enforced inside Qdrant by the knowledge store.
 """
+
 from __future__ import annotations
 
-from typing import Any
-
 from sovereignai.tools.base import Tool, ToolResult
+from sovereignai.orchestrator.session_context import current_user_role
 
 
 class RagSearch(Tool):
     name = "rag_search"
+
     description = (
-        "Search the local knowledge base (SOPs, manuals, past correspondence) "
-        "for information relevant to a query. "
-        "Returns the most relevant chunks with source filenames and sections. "
-        "Always cite sources in your response using the returned filenames."
+        "Search the local knowledge base containing SOPs, manuals, "
+        "technical documents, books, and other authorized documents. "
+        "Use this tool when the user asks for information that may "
+        "exist in the knowledge base. "
+        "Always use the retrieved results as the source of truth "
+        "and cite the returned source document."
     )
-    categories = ["general", "document_qa", "planning", "vision"]
+
+    categories = [
+        "general",
+        "document_qa",
+        "planning",
+        "vision",
+    ]
+
     json_schema = {
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "The search query",
+                "description": (
+                    "The question or information to search for "
+                    "in the local knowledge base."
+                ),
             },
             "top_k": {
                 "type": "integer",
-                "description": "Number of results to return (default: 5)",
+                "description": (
+                    "Number of relevant chunks to retrieve. "
+                    "Default is 5."
+                ),
             },
             "doc_type": {
                 "type": "string",
-                "description": "Filter by document type: sop | manual | correspondence | any",
+                "description": (
+                    "Optional document type filter: "
+                    "sop | manual | correspondence | any"
+                ),
             },
         },
         "required": ["query"],
     }
 
-    def run(self, query: str, top_k: int = 5, doc_type: str | None = None) -> ToolResult:
-        try:
-            from sovereignai.knowledge_base.store import get_store
-            store = get_store()
-            results = store.search(query, top_k=top_k, doc_type=doc_type)
-            if not results:
-                return ToolResult.ok({
-                    "query": query,
-                    "results": [],
-                    "message": "No documents found in the knowledge base. Add documents with: sovai kb add <path>",
-                })
-            return ToolResult.ok({
-                "query": query,
-                "results": results,
-                "count": len(results),
-            })
-        except Exception as e:
-            return ToolResult.fail(f"RAG search failed: {e}")
+    def run(
+        self,
+        query: str,
+        top_k: int = 5,
+        doc_type: str | None = None,
+    ) -> ToolResult:
 
+        try:
+            # Import here so the tool does not initialize the
+            # knowledge store until the tool is actually used.
+            from sovereignai.knowledge_base.store import get_store
+
+            store = get_store()
+
+            # ---------------------------------------------------------
+            # SECURITY:
+            # The role is obtained from the authenticated session
+            # context. It is NOT supplied by the LLM.
+            # ---------------------------------------------------------
+            role = current_user_role.get()
+
+            # ---------------------------------------------------------
+            # Hybrid retrieval + RBAC
+            #
+            # store.search() applies the role filter inside Qdrant.
+            # ---------------------------------------------------------
+            results = store.search(
+                query=query,
+                top_k=top_k,
+                doc_type=doc_type,
+                role=role,
+            )
+
+            # ---------------------------------------------------------
+            # No authorized results
+            # ---------------------------------------------------------
+            if not results:
+                return ToolResult.ok(
+                    {
+                        "query": query,
+                        "results": [],
+                        "count": 0,
+                        "message": (
+                            "No authorized documents were found "
+                            "for this query."
+                        ),
+                    }
+                )
+
+            # ---------------------------------------------------------
+            # Successful retrieval
+            # ---------------------------------------------------------
+            return ToolResult.ok(
+                {
+                    "query": query,
+                    "results": results,
+                    "count": len(results),
+                }
+            )
+
+        except Exception as e:
+            return ToolResult.fail(
+                f"RAG search failed: {e}"
+            )
