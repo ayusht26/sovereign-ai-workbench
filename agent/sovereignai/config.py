@@ -157,7 +157,15 @@ class Config:
     @property
     def sandbox_timeout(self) -> int:
         return self._raw.get("sandbox", {}).get("timeout_s", 60)
+    @property
+    def provider_routing(self) -> dict | None:
+        """Pass-through OpenRouter 'provider' object — pin order/allow_fallbacks
+        once you know which upstream host is reliable for your workload."""
+        return self._raw.get("provider", {}).get("routing")
 
+    @property
+    def provider_request_timeout_s(self) -> int:
+        return self._raw.get("provider", {}).get("request_timeout_s", 45)
     @property
     def sandbox_images(self) -> dict[str, str]:
         return self._raw.get("sandbox", {}).get("images", {

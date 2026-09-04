@@ -77,18 +77,17 @@ router:
 #
 models:
   general:
-    api: openrouter/free
-    api_fallback: nvidia/nemotron-3-ultra-550b-a55b:free
+    api: openai/gpt-oss-20b        # no :free suffix — a few cents per call, but consistently available
+    api_fallback: openrouter/free   # fine as a last-resort dev fallback, not for the actual demo
   coding:
-    api: openrouter/free
-    api_fallback: nvidia/nemotron-3-ultra-550b-a55b:free
-  vision:
-    local: qwen2.5vl:7b
-    api: qwen/qwen3-vl-235b-a22b-thinking
-    api_fallback: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
-    fallback: llama3.1:8b
-  embedding:
-    model: nomic-embed-text
+    api: openai/gpt-oss-20b
+    api_fallback: openrouter/free
+  document_qa:
+    api: openai/gpt-oss-20b
+    api_fallback: openrouter/free
+  spreadsheet:
+    api: openai/gpt-oss-20b
+    api_fallback: openrouter/free
 
   # Embeddings ALWAYS remain local.
   # RAG data should never need to leave the machine.

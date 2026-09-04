@@ -25,18 +25,25 @@ from textual.widgets import Input, Static, Label, Footer
 
 from sovereignai.ui.widgets.chat_thread import ChatThread
 from sovereignai.ui.widgets.status_bar import StatusBar
-
-_BANNER = """\
-[bold #5FA8D3]███████╗ ██████╗ ██╗   ██╗ █████╗ ██╗[/]
-[bold #4a90b8]██╔════╝██╔═══██╗██║   ██║██╔══██╗██║[/]
-[bold #3d7da0]███████╗██║   ██║██║   ██║███████║██║[/]
-[bold #306988]╚════██║██║   ██║╚██╗ ██╔╝██╔══██║██║[/]
-[bold #2E5A7A]███████║╚██████╔╝ ╚████╔╝ ██║  ██║██║[/]
-[bold #2E5A7A]╚══════╝ ╚═════╝   ╚═══╝  ╚═╝  ╚═╝╚═╝[/]
-
-[dim]        S O V E R E I G N   A I[/]
-[bold #D9A441]   Local models. Local data. Zero external calls.   🔒 OFFLINE[/]"""
-
+def _build_banner(mode: str) -> str:
+    lines = [
+        r"[bold #5FA8D3]██████╗  █████╗ ███████╗████████╗██╗ █████╗ ███╗   ██╗[/]",
+        r"[bold #4a90b8]██╔══██╗██╔══██╗██╔════╝╚══██╔══╝██║██╔══██╗████╗  ██║[/]",
+        r"[bold #3d7da0]██████╔╝███████║███████╗   ██║   ██║███████║██╔██╗ ██║[/]",
+        r"[bold #306988]██╔══██╗██╔══██║╚════██║   ██║   ██║██╔══██║██║╚██╗██║[/]",
+        r"[bold #2E5A7A]██████╔╝██║  ██║███████║   ██║   ██║██║  ██║██║ ╚████║[/]",
+        r"[bold #2E5A7A]╚═════╝ ╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝[/]",
+        "",
+        "[dim]            B A S T I A N   A I[/]",
+    ]
+    badge = {
+        "local":  "🔒 LOCAL / AIR-GAPPED",
+        "api":    "🌐 API MODE",
+        "breach": "🔓 UNEXPECTED EGRESS DETECTED",
+    }[mode]
+    color = "#D9A441" if mode != "breach" else "#D94141"
+    lines.append(f"[bold {color}]   Local models. Local data. Zero external calls unless in API mode.   {badge}[/]")
+    return "\n".join(lines)
 
 @dataclass
 class GPUInfo:
@@ -255,10 +262,11 @@ class MainScreen(Screen):
         yield StatusBar(id="status-bar")
 
     async def on_mount(self) -> None:
-        # Show ASCII banner
+        from sovereignai.config import get_config
         chat = self.query_one("#chat-thread", ChatThread)
-        await chat.add_system_message(_BANNER)
-
+        mode = "api" if get_config().provider_mode == "api" else "local"
+        await chat.add_system_message(_build_banner(mode))
+        ...
         # Start network guard
         from sovereignai.net_guard.monitor import get_monitor
         mon = get_monitor()
@@ -361,6 +369,15 @@ class MainScreen(Screen):
                 "Keys: ctrl+p (palette)   esc (interrupt)   ctrl+n (new session)",
                 "info",
             )
+        elif head == "/attach" and len(parts) > 1:
+            src = Path(" ".join(parts[1:])).expanduser().resolve()
+            if not src.exists():
+                await chat.add_system_message(f"File not found: {src}", "error")
+            else:
+                import shutil as _shutil
+                dest = self._workspace / src.name
+                _shutil.copy2(src, dest)
+                await chat.add_system_message(f"📎 Attached {src.name} — reference it in your next message.", "info")
         else:
             await chat.add_system_message(f"Unknown: {cmd}  →  type /help", "warning")
 
