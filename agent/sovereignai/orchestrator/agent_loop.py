@@ -162,11 +162,16 @@ def _extract_hermes_style_tool_calls(raw_text: str, valid_tool_names: set[str]) 
         calls.append({"name": name_match.group(1), "arguments": args})
     return calls
 
-def _run_stream(client, model, messages, tools, session, step) -> Generator[dict[str, Any], None, tuple[str, list[dict]]]:
-    """Consumes one streamed turn, yielding UI events, and returns (thought_text, tool_calls)."""
+def _run_stream(client, model, messages, tools, session, step, tool_choice=None) -> Generator[dict[str, Any], None, tuple[str, list[dict]]]:
     thought_chunks: list[str] = []
     tool_calls: list[dict] = []
-    for stream_chunk in client.chat_stream(model=model, messages=messages, tools=tools, num_ctx=8192):
+    for stream_chunk in client.chat_stream(
+        model=model,
+        messages=messages,
+        tools=tools,
+        num_ctx=8192,
+        tool_choice=tool_choice,
+    ):
         if getattr(session, "cancelled", False):
             break
         if stream_chunk.done:
@@ -179,7 +184,6 @@ def _run_stream(client, model, messages, tools, session, step) -> Generator[dict
             tool_calls.extend(stream_chunk.tool_calls)
     return "".join(thought_chunks), tool_calls
 
-
 def run_agent_turn(
     session: Session,
     user_message: str,
@@ -190,6 +194,9 @@ def run_agent_turn(
 
     session.append("user", user_message)
     current_user_role.set(getattr(session, "user_role", "viewer"))
+    session._nudged_this_turn = False
+    session._last_tool_signature = None
+    session._last_tool_result = None
 
     if model_override:
         decision = RoutingDecision(
@@ -226,7 +233,7 @@ def run_agent_turn(
 
     client = get_llm_client()
     tools_for_call = registry.tool_schemas() if registry.tools else None
-
+    force_tool_choice = None
     tool_calls_made: list[dict] = []
     response_text = ""
 
@@ -237,8 +244,15 @@ def run_agent_turn(
 
         try:
             thought_text, current_tool_calls = yield from _run_stream(
-                client, decision.model_name, messages_for_model, tools_for_call, session, step
+                client,
+                decision.model_name,
+                messages_for_model,
+                tools_for_call,
+                session,
+                step,
+                tool_choice=force_tool_choice,
             )
+            force_tool_choice = None  # only force for one retry, not forever
         except Exception as e:
             if cfg.provider_mode == "local":
                 fallback = cfg.fallback_for(decision.category)
@@ -246,7 +260,13 @@ def run_agent_turn(
                 try:
                     decision = decision._replace(model_name=fallback)
                     thought_text, current_tool_calls = yield from _run_stream(
-                        client, fallback, messages_for_model, tools_for_call, session, step
+                        client,
+                        fallback,
+                        messages_for_model,
+                        tools_for_call,
+                        session,
+                        step,
+                        tool_choice=force_tool_choice,
                     )
                 except Exception as e2:
                     yield {"kind": "error", "message": str(e2)}
@@ -257,17 +277,35 @@ def run_agent_turn(
                 try:
                     decision = decision._replace(model_name=api_fallback)
                     thought_text, current_tool_calls = yield from _run_stream(
-                        client, api_fallback, messages_for_model, tools_for_call, session, step
+                        client,
+                        api_fallback,
+                        messages_for_model,
+                        tools_for_call,
+                        session,
+                        step,
+                        tool_choice=force_tool_choice,
                     )
                 except Exception as e2:
                     yield {"kind": "error", "message": str(e2)}
                     return ""
+
 
         messages_for_model.append(_build_assistant_message(thought_text, current_tool_calls, cfg.provider_mode))
 
         if not current_tool_calls and registry.tools:
             known_tool_names = {t.name for t in registry.tools}
             current_tool_calls.extend(_extract_tool_calls_from_text(thought_text, known_tool_names))
+
+            if not current_tool_calls and not getattr(session, "_nudged_this_turn", False):
+                mentioned_tool = next((name for name in known_tool_names if name in thought_text), None)
+                if mentioned_tool:
+                    session._nudged_this_turn = True
+                    force_tool_choice = "required"
+                    messages_for_model.append({
+                        "role": "user",
+                        "content": f"You described calling {mentioned_tool} but didn't actually call it. Call it now.",
+                    })
+                    continue
 
         if current_tool_calls:
             tool_results = []
@@ -276,18 +314,41 @@ def run_agent_turn(
                 tool_args = call.get("arguments") or {}
                 call_id = call.get("id")
 
-                yield {"kind": "tool_call_start", "name": tool_name, "args": tool_args, "step": step}
-                result = registry.dispatch(tool_name, tool_args)
-                session.tool_calls_made += 1
+                signature = (tool_name, json.dumps(tool_args, sort_keys=True, default=str))
+                if signature == session._last_tool_signature:
+                    # Same tool, same args, called again in the same turn — the model
+                    # is re-deriving instead of reading its own prior result. Don't
+                    # re-run a side-effecting tool a second time; replay the cached result.
+                    result = session._last_tool_result
+                    yield {"kind": "tool_call_start", "name": tool_name, "args": tool_args, "step": step}
+                else:
+                    yield {"kind": "tool_call_start", "name": tool_name, "args": tool_args, "step": step}
+                    result = registry.dispatch(tool_name, tool_args)
+                    session.tool_calls_made += 1
+                    session._last_tool_signature = signature
+                    session._last_tool_result = result
+
                 yield {"kind": "tool_call_result", "name": tool_name, "args": tool_args, "result": result.to_dict(), "step": step}
                 tool_calls_made.append({"name": tool_name, "args": tool_args, "result": result.to_dict(), "step": step})
 
                 if cfg.provider_mode == "api" and call.get("id"):
-                    tool_results.append({"role": "tool", "tool_call_id": call["id"], "content": result.to_json(), "name": tool_name})
+                    tool_results.append({
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "content": result.to_json(),
+                        "name": tool_name,
+                    })
                 elif cfg.provider_mode == "api":
-                    tool_results.append({"role": "user", "content": f"Result of `{tool_name}`:\n{result.to_json()}"})
+                    tool_results.append({
+                        "role": "user",
+                        "content": f"Result of `{tool_name}`:\n{result.to_json()}",
+                    })
                 else:
-                    tool_results.append({"role": "tool", "content": result.to_json(), "name": tool_name})
+                    tool_results.append({
+                        "role": "tool",
+                        "content": result.to_json(),
+                        "name": tool_name,
+                    })
 
             messages_for_model.extend(tool_results)
             continue
