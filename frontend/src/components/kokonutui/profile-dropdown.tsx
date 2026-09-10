@@ -29,7 +29,7 @@ export default function ProfileDropdown({
   if (!profile) return null;
 
   const displayName = profile.full_name || `@${profile.username}`;
-  const companyName = company?.name || "Tata Motors";
+  const companyName = company?.name || "Indian Oil Corporation Limited";
 
   const handleSignOut = async () => {
     await logout();

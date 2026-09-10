@@ -1,4 +1,4 @@
-﻿import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { Eye, EyeOff, ShieldCheck, UserCheck } from "lucide-react";
 import { useState } from "react";
@@ -101,7 +101,7 @@ function LoginPage() {
           <div className="mt-8 space-y-3 font-mono text-caption text-warm-granite">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-signal-orange" />
-              <span>Company: Tata Motors (Slug: tata-motors)</span>
+              <span>Company: Indian Oil Corporation Limited (Slug: iocl)</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-metric-green" />
@@ -122,7 +122,7 @@ function LoginPage() {
                 onClick={() => fillQuickLogin("admin", "admin123")}
                 className="flex flex-col items-start rounded border border-ash-stroke/40 bg-carbon-lift/50 p-2 text-left transition hover:border-signal-orange hover:bg-carbon-lift"
               >
-                <span className="font-semibold text-bone">Tata Admin</span>
+                <span className="font-semibold text-bone">IOCL Admin</span>
                 <span className="text-[11px] font-mono text-signal-orange">admin / admin123</span>
               </button>
               <button

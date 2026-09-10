@@ -31,6 +31,49 @@ export interface WorkbenchQueryResult {
   generatedFiles?: GeneratedFile[] | undefined;
 }
 
+const OPENAI_API_KEY_ENV =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_OPENAI_API_KEY) ||
+  (typeof process !== "undefined" ? process.env?.VITE_OPENAI_API_KEY || process.env?.OPENAI_API_KEY : "") ||
+  "";
+
+/**
+ * Generate high-fidelity 1536-dim semantic embedding using OpenAI text-embedding-3-small
+ * Falls back to local normalized embedding if offline or network failure
+ */
+export async function generateEmbedding(text: string): Promise<number[]> {
+  const clean = text.replace(/\n+/g, " ").trim().slice(0, 8000);
+  if (!clean) return new Array(1536).fill(0);
+
+  if (OPENAI_API_KEY_ENV) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/embeddings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENAI_API_KEY_ENV}`,
+        },
+        body: JSON.stringify({
+          model: "text-embedding-3-small",
+          input: clean,
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.data?.[0]?.embedding) {
+          return json.data[0].embedding;
+        }
+      } else {
+        console.warn("OpenAI embedding API returned status:", res.status);
+      }
+    } catch (e) {
+      console.warn("Failed to generate OpenAI embedding, using local fallback:", e);
+    }
+  }
+
+  return generateLocalEmbedding(text);
+}
+
 /**
  * Deterministic pseudo-embedding generator (1536 dims) for client-side queries
  * Normalizes vector so inner product / cosine similarity works with pgvector
@@ -67,14 +110,16 @@ export async function retrieveChunksForUser(
   limit: number = 4,
 ): Promise<RetrievedPassage[]> {
   try {
-    // 1. Generate query embedding
-    const queryVector = generateLocalEmbedding(query);
+    // 1. Generate real semantic embedding vector
+    const queryVector = await generateEmbedding(query);
 
-    // 2. Call RPC match_document_chunks
+    // 2. Call RPC match_document_chunks with role and company filters
     const { data: chunks, error: rpcError } = await supabase.rpc("match_document_chunks", {
       query_embedding: queryVector,
-      match_threshold: 0.05,
+      match_threshold: 0.20,
       match_count: limit,
+      filter_company_id: companyId || null,
+      filter_category: userRole === "admin" ? null : userRole,
     });
 
     if (rpcError) {
@@ -86,30 +131,15 @@ export async function retrieveChunksForUser(
       return await fallbackKeywordSearch(query, companyId, userRole, limit);
     }
 
-    // 3. Fetch associated document metadata
-    const docIds = Array.from(new Set(chunks.map((c: any) => c.document_id)));
-    const { data: docs } = await supabase
-      .from("documents")
-      .select("id, title, category")
-      .in("id", docIds);
-
-    const docMap = new Map<string, { title: string; category: UserRole }>();
-    if (docs) {
-      docs.forEach((d: any) => docMap.set(d.id, { title: d.title, category: d.category }));
-    }
-
-    return chunks.map((c: any) => {
-      const doc = docMap.get(c.document_id);
-      return {
-        id: c.id,
-        documentId: c.document_id,
-        documentTitle: doc?.title || "Company Technical Spec",
-        category: c.category || doc?.category || "tech",
-        chunkIndex: c.chunk_index || 0,
-        content: c.content,
-        similarity: Number((c.similarity || 0.85).toFixed(4)),
-      };
-    });
+    return chunks.map((c: any) => ({
+      id: c.id,
+      documentId: c.document_id,
+      documentTitle: c.title || "Company Technical Spec",
+      category: c.category || "tech",
+      chunkIndex: c.chunk_index ?? 0,
+      content: c.content,
+      similarity: Number((c.similarity || 0.85).toFixed(4)),
+    }));
   } catch (err) {
     console.error("Error retrieving chunks:", err);
     return [];
@@ -324,6 +354,138 @@ export async function clearAllUserRecentQueries(userId?: string): Promise<boolea
   }
 }
 
+export interface RoleAccessCheck {
+  allowed: boolean;
+  targetCategory?: string;
+  refusalReason?: string;
+}
+
+/**
+ * Enforce departmental role boundary security
+ * - admin: unrestricted, can ask and answer about anything
+ * - tech: cannot ask about finance or governance/bylaws
+ * - finance: cannot ask about tech architecture/codebases or governance/bylaws
+ * - support: cannot ask about finance or deep engineering codebases
+ */
+export function validateRoleAccess(
+  prompt: string,
+  userRole: UserRole | "guest"
+): RoleAccessCheck {
+  // Admin has universal clearance - can ask and answer about anything
+  if (userRole === "admin") {
+    return { allowed: true };
+  }
+
+  const p = prompt.toLowerCase();
+
+  // General conversational greetings or casual chat are always allowed
+  const isGeneralChat =
+    /^(hi|hello|hey|good\s+(morning|afternoon|evening)|howdy|hola|who are you|what can you do|what are you|help|thanks|thank you|ok|okay|bye|goodbye)[\s!?.]*$/i.test(
+      p
+    ) ||
+    /^(what is the capital of|tell me a joke|write a poem|explain (photosynthesis|quantum|relativity|gravity))/i.test(
+      p
+    );
+
+  if (isGeneralChat) {
+    return { allowed: true };
+  }
+
+  // Finance domain intent detection
+  const isFinanceIntent =
+    /\b(finance|financial|budget|budgets|capex|opex|revenue|profit|loss|ebitda|quarterly expense|balance sheet|annual report|iocl|indian oil|dividend|dividends|shareholder|shareholders|cash flow|fiscal|fy2[0-9]|income statement|variance report|audited|expenditure|cost projection|refinery margin|refinery throughput|pipeline throughput|fuel sales|petroleum sales)\b/i.test(
+      p
+    );
+
+  // Tech / Engineering domain intent detection
+  const isTechIntent =
+    /\b(engineering|tech|codebase|source code|script|python|javascript|typescript|c\+\+|sql query|api|apis|microservice|microservices|architecture|developer onboarding|engineer handbook|github|ci\/cd|git|docker|kubernetes|platform services|backend|frontend)\b/i.test(
+      p
+    );
+
+  // Support domain intent detection
+  const isSupportIntent =
+    /\b(vpn|helpdesk|password reset|it ticket|tickets|ticket sla|hardware request|equipment request|remote access|laptop setup|printer|help desk|support desk|incident runbook)\b/i.test(
+      p
+    );
+
+  // Corporate governance / Bylaws intent detection
+  const isAdminGovIntent =
+    /\b(bylaw|bylaws|board of directors|quorum|amendment procedure|corporate governance|shareholder meeting|executive committee)\b/i.test(
+      p
+    );
+
+  // 1. Tech user asking about Finance or Corporate Governance
+  if (userRole === "tech") {
+    if (isFinanceIntent) {
+      return {
+        allowed: false,
+        targetCategory: "finance",
+        refusalReason:
+          "You are not allowed to ask about these questions. As a Tech Specialist, access to corporate financial reports, capex projections, and annual budget records is restricted under company Row-Level Security (RLS) policies.",
+      };
+    }
+    if (isAdminGovIntent) {
+      return {
+        allowed: false,
+        targetCategory: "admin",
+        refusalReason:
+          "You are not allowed to ask about these questions. Corporate governance bylaws and board operating procedures are restricted to administrative personnel.",
+      };
+    }
+  }
+
+  // 2. Finance user asking about Tech or Corporate Governance
+  if (userRole === "finance") {
+    if (isTechIntent && !isFinanceIntent) {
+      return {
+        allowed: false,
+        targetCategory: "tech",
+        refusalReason:
+          "You are not allowed to ask about these questions. As a Finance Specialist, access to internal engineering architecture, source code repositories, and technical onboarding manuals is restricted under company Row-Level Security (RLS) policies.",
+      };
+    }
+    if (isAdminGovIntent) {
+      return {
+        allowed: false,
+        targetCategory: "admin",
+        refusalReason:
+          "You are not allowed to ask about these questions. Corporate governance bylaws and board operating procedures are restricted to administrative personnel.",
+      };
+    }
+  }
+
+  // 3. Support user asking about Finance or Tech
+  if (userRole === "support") {
+    if (isFinanceIntent) {
+      return {
+        allowed: false,
+        targetCategory: "finance",
+        refusalReason:
+          "You are not allowed to ask about these questions. As an IT Support Specialist, access to confidential financial ledgers, capex, and annual reports is restricted under company Row-Level Security (RLS) policies.",
+      };
+    }
+    if (isTechIntent && !isSupportIntent) {
+      return {
+        allowed: false,
+        targetCategory: "tech",
+        refusalReason:
+          "You are not allowed to ask about these questions. Access to core software development codebases and architecture manuals is restricted to technical personnel.",
+      };
+    }
+    if (isAdminGovIntent) {
+      return {
+        allowed: false,
+        targetCategory: "admin",
+        refusalReason:
+          "You are not allowed to ask about these questions. Corporate governance bylaws and board operating procedures are restricted to administrative personnel.",
+      };
+    }
+  }
+
+  return { allowed: true };
+}
+
 /**
  * Primary multi-tenant query execution router
  */
@@ -332,13 +494,32 @@ export async function executeWorkbenchQuery(
   userId: string,
   companyId: string,
   userRole: UserRole | "guest",
-  companyName: string = "Tata Motors",
+  companyName: string = "Indian Oil Corporation Limited",
   selectedModel: string = "auto",
   isWebSearch: boolean = false,
   imageDataUrl?: string,
 ): Promise<WorkbenchQueryResult> {
   const cleanPrompt = prompt.trim();
   const p = cleanPrompt.toLowerCase();
+
+  // 0. Enforce strict departmental role boundary permissions
+  const roleCheck = validateRoleAccess(cleanPrompt, userRole);
+  if (!roleCheck.allowed) {
+    return {
+      isDocumentQuery: false,
+      model: "RLS-Policy-Guard",
+      reason: `Role-Level Security boundary violation: ${String(userRole).toUpperCase()} -> ${roleCheck.targetCategory?.toUpperCase()}`,
+      steps: [
+        `Verify authenticated role: [${String(userRole).toUpperCase()}]`,
+        `Detect target domain: [${roleCheck.targetCategory?.toUpperCase()}]`,
+        "Enforce Row-Level Security isolation",
+        "Block unauthorized cross-department retrieval",
+      ],
+      answer: roleCheck.refusalReason || "You are not allowed to ask about these questions.",
+      passages: [],
+    };
+  }
+
   const isImageRequest = !imageDataUrl && detectImageGenerationIntent(cleanPrompt);
 
   // General conversational intent (greeting, intro, generic query)
@@ -413,7 +594,7 @@ export async function executeWorkbenchQuery(
       steps = ["Extract layout", "Parse visual structures", "Verify telemetry"];
     } else if (
       passages.length > 0 ||
-      /sop|spec|policy|audit|budget|capex|sla|warranty|voltage|can|battery|cost/.test(p)
+      /sop|spec|policy|audit|budget|capex|sla|warranty|voltage|can|battery|cost|ticket|vpn|helpdesk|onboard|engineer|refinery|pipeline|operations|quarterly|variance|throughput|fuel|petroleum|crude/.test(p)
     ) {
       modelName = "Qwen3.6-27B";
       modelTag = "reasoning";
@@ -699,14 +880,18 @@ export async function ingestDocument(
       chunks.push(textContent);
     }
 
-    // 3. Insert chunks into document_chunks
+    // 3. Generate real embeddings and insert chunks into document_chunks
+    const chunkEmbeddings = await Promise.all(
+      chunks.map((content) => generateEmbedding(content))
+    );
+
     const chunkInserts = chunks.map((content, idx) => ({
       document_id: doc.id,
       company_id: companyId,
       category,
       chunk_index: idx,
       content,
-      embedding: generateLocalEmbedding(content),
+      embedding: chunkEmbeddings[idx],
     }));
 
     const { error: chunkError } = await supabase.from("document_chunks").insert(chunkInserts);

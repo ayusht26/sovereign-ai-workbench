@@ -13,6 +13,7 @@ import {
   Trash2,
   Download,
   ImageIcon,
+  ShieldAlert,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AI_Input_Search from '@/components/kokonutui/ai-input-search';
@@ -244,7 +245,7 @@ function ChatPage() {
       const activeUserId = user?.id || '00000000-0000-0000-0000-000000000000';
       const activeCompanyId = profile?.company_id || '00000000-0000-0000-0000-000000000000';
       const activeRole = role || 'support';
-      const companyName = company?.name || 'Tata Motors';
+      const companyName = company?.name || 'Indian Oil Corporation Limited';
 
       const promptText =
         text ||
@@ -515,7 +516,7 @@ function ChatPage() {
                 className="py-12"
               >
                 <div className="eyebrow text-warm-granite">
-                  authenticated session · {company?.name || 'Tata Motors'}
+                  authenticated session · {company?.name || 'Indian Oil Corporation Limited'}
                 </div>
                 <h1 className="mt-3 text-heading tracking-[-0.031em] text-bone">
                   What are we forging today?
@@ -563,10 +564,19 @@ function ChatPage() {
                         <button
                           type="button"
                           onClick={() => toggleReasoning(m.id)}
-                          className="inline-flex items-center gap-1.5 rounded-[4px] border border-carbon-lift/80 bg-carbon-lift/30 px-2.5 py-1 text-[11px] font-mono text-warm-granite hover:text-bone hover:border-ash-stroke transition cursor-pointer"
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-[4px] border px-2.5 py-1 text-[11px] font-mono transition cursor-pointer",
+                            m.routedTo === 'RLS-Policy-Guard'
+                              ? "border-red-500/50 bg-red-500/10 text-red-400 hover:border-red-500/80"
+                              : "border-carbon-lift/80 bg-carbon-lift/30 text-warm-granite hover:text-bone hover:border-ash-stroke"
+                          )}
                         >
-                          <Sparkles className="h-3 w-3 text-signal-orange" />
-                          <span>{m.routedTo || 'Auto router'} · {expandedReasoning[m.id] ? 'Hide reasoning' : 'Show reasoning'}</span>
+                          {m.routedTo === 'RLS-Policy-Guard' ? (
+                            <ShieldAlert className="h-3 w-3 text-red-400" />
+                          ) : (
+                            <Sparkles className="h-3 w-3 text-signal-orange" />
+                          )}
+                          <span>{m.routedTo || 'Auto router'} · {expandedReasoning[m.id] ? 'Hide policy' : 'Show policy'}</span>
                           <ChevronDown
                             className={cn(
                               'h-3 w-3 transition-transform duration-200',
@@ -701,9 +711,19 @@ function ChatPage() {
                       )}
 
                       {/* Main Message Text & Rich Code Block Content */}
-                      <div className="text-body-sm text-bone font-sans leading-relaxed pt-1">
-                        <MarkdownMessage content={m.text} />
-                      </div>
+                      {m.routedTo === 'RLS-Policy-Guard' ? (
+                        <div className="rounded-[8px] border border-red-500/40 bg-red-500/10 p-4 mt-2">
+                          <div className="flex items-center gap-2 font-mono text-xs text-red-400 font-semibold uppercase mb-1.5">
+                            <ShieldAlert className="h-4 w-4 text-red-400" />
+                            Security Access Boundary Enforced
+                          </div>
+                          <p className="text-sm text-red-200 font-sans leading-relaxed">{m.text}</p>
+                        </div>
+                      ) : (
+                        <div className="text-body-sm text-bone font-sans leading-relaxed pt-1">
+                          <MarkdownMessage content={m.text} />
+                        </div>
+                      )}
 
                       {/* Generated Deliverables (docx, xlsx, pptx, txt) with Instant Download */}
                       {m.generatedFiles && m.generatedFiles.length > 0 && (

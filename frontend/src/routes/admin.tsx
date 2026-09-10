@@ -463,7 +463,7 @@ function AdminPage() {
                 ADMIN CONSOLE
               </span>
               <span className="text-sm text-bone font-medium">
-                {company?.name || 'Tata Motors'}
+                {company?.name || 'Indian Oil Corporation Limited'}
               </span>
             </div>
           </div>

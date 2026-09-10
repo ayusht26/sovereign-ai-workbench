@@ -269,7 +269,7 @@ function ProfilePage() {
                 <div className="mt-2 flex flex-wrap items-center gap-4 text-xs font-mono text-warm-granite">
                   <span className="flex items-center gap-1.5 text-pale-stone">
                     <Building className="h-3.5 w-3.5 text-signal-orange" />
-                    {company?.name || 'Tata Motors'}
+                    {company?.name || 'Indian Oil Corporation Limited'}
                   </span>
                   <span className="flex items-center gap-1.5">
                     <Calendar className="h-3.5 w-3.5" />
@@ -300,7 +300,7 @@ function ProfilePage() {
           <div className="mt-2 text-xs text-pale-stone leading-relaxed font-mono">
             {role === 'admin' && (
               <p>
-                As an <strong>Administrator</strong> for <strong>{company?.name || 'Tata Motors'}</strong>, you have read, write, and provisioning authority across all technical, financial, and operational corpora.
+                As an <strong>Administrator</strong> for <strong>{company?.name || 'Indian Oil Corporation Limited'}</strong>, you have read, write, and provisioning authority across all technical, financial, and operational corpora.
               </p>
             )}
             {role === 'tech' && (

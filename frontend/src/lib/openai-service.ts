@@ -415,6 +415,17 @@ export async function executeOpenAIChat({
     `- 'create_text_file': For text files (.txt), scripts (.py, .sh), configs, markdown notes, code.\n` +
     `CRITICAL: Whenever the user asks you to create, draft, build, generate, provide, or export a file, report, spreadsheet, presentation, or text document, YOU MUST CALL THE CORRESPONDING TOOL with comprehensive, realistic, and highly detailed data. Also provide a polite, professional executive summary in your response text.\n`;
 
+  if (userRole === "admin") {
+    systemPrompt += `\n[AUTHORIZATION CLEARANCE: UNRESTRICTED ADMIN]: You have complete administrative authority to answer questions, generate files, and analyze documents across ALL departments (Finance, Tech, IT Support, Governance, Legal). You can ask and answer about anything without restriction.\n`;
+  } else {
+    systemPrompt +=
+      `\n[MANDATORY ROLE BOUNDARY ENFORCEMENT - ${userRole.toUpperCase()}]:\n` +
+      `- You are operating strictly under the security boundary of the [${userRole.toUpperCase()}] department.\n` +
+      `- If the user's role is 'tech' and they ask about Finance (budgets, capex, revenue, quarterly expenses, financial reports), YOU MUST REFUSE: "You are not allowed to ask about these questions. Under company Row-Level Security (RLS) policy, financial records are restricted to Finance personnel."\n` +
+      `- If the user's role is 'finance' and they ask about Tech/Engineering (source code, microservices, engineering architecture, tech onboarding), YOU MUST REFUSE: "You are not allowed to ask about these questions. Under company Row-Level Security (RLS) policy, engineering architecture is restricted to Tech personnel."\n` +
+      `- If the user's role is 'support' and they ask about Finance ledgers or core Tech codebases, YOU MUST REFUSE: "You are not allowed to ask about these questions."\n`;
+  }
+
   if (imageDataUrl) {
     systemPrompt +=
       `\n[MULTIMODAL VISION MODE ACTIVE]: The user has provided an attached image/screenshot. Inspect it meticulously, explain its architecture, UI, code, error messages, or charts, and answer any questions with high technical fidelity.\n`;
@@ -428,9 +439,13 @@ export async function executeOpenAIChat({
   if (passages && passages.length > 0) {
     systemPrompt += `\n=== VERIFIED INTERNAL COMPANY DOCUMENTS (Row Level Security Scope: ${userRole.toUpperCase()}) ===\n`;
     passages.forEach((p, idx) => {
-      systemPrompt += `[Document ${idx + 1}: ${p.documentTitle} | Category: ${p.category.toUpperCase()}]\n${p.content}\n\n`;
+      systemPrompt += `[Source ${idx + 1}: "${p.documentTitle}" | Role: ${p.category.toUpperCase()} | Similarity: ${Math.round((p.similarity || 0.85) * 100)}%]\n${p.content}\n\n`;
     });
-    systemPrompt += `Ground your answer directly in these verified passages. Highlight specific metrics, clauses, parameters, and SLAs from the texts when available.`;
+    systemPrompt += `CRITICAL RAG GROUNDING INSTRUCTIONS:\n` +
+      `- Ground your answer directly in these verified internal passages.\n` +
+      `- Explicitly cite the sources (e.g., "[Source 1]", "[Source 2]") whenever referencing figures, policies, SLAs, or technical parameters.\n` +
+      `- Highlight specific metrics, clauses, parameters, and SLAs from the texts.\n` +
+      `- If a detail is not present in the verified documents, clearly state that it is not covered in the internal files.\n`;
   } else {
     if (modelTag === "code" || /python|javascript|typescript|c\+\+|sql|code|script/i.test(prompt)) {
       systemPrompt += `\nYou are operating in high-performance coding sandbox mode. Provide complete, production-ready, cleanly typed code with inline comments and execution examples.`;
