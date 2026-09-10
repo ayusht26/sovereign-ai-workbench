@@ -46,6 +46,55 @@ function isH3SwallowedErrorBody(body: string): boolean {
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    // Proxy /api/openai requests to OpenAI API for zero-egress/CORS handling
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/openai")) {
+      try {
+        const subPath = url.pathname.replace(/^\/api\/openai/, "");
+        const targetUrl = `https://api.openai.com${subPath}${url.search}`;
+        const apiKey =
+          (typeof process !== "undefined" && (process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY)) ||
+          "";
+
+        const headers = new Headers(request.headers);
+        headers.set("host", "api.openai.com");
+        if (apiKey && !headers.get("authorization")) {
+          headers.set("authorization", `Bearer ${apiKey}`);
+        }
+
+        const body =
+          request.method !== "GET" && request.method !== "HEAD"
+            ? await request.arrayBuffer()
+            : undefined;
+
+        const proxyResponse = await fetch(targetUrl, {
+          method: request.method,
+          headers,
+          body,
+        });
+
+        const responseHeaders = new Headers(proxyResponse.headers);
+        responseHeaders.set("access-control-allow-origin", "*");
+        responseHeaders.set("access-control-allow-methods", "GET, POST, OPTIONS");
+        responseHeaders.set("access-control-allow-headers", "authorization, content-type");
+
+        return new Response(proxyResponse.body, {
+          status: proxyResponse.status,
+          statusText: proxyResponse.statusText,
+          headers: responseHeaders,
+        });
+      } catch (proxyError) {
+        console.error("Server /api/openai proxy error:", proxyError);
+        return new Response(
+          JSON.stringify({ error: { message: "Internal server proxy error connecting to OpenAI" } }),
+          {
+            status: 502,
+            headers: { "content-type": "application/json" },
+          }
+        );
+      }
+    }
+
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

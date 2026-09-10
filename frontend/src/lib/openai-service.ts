@@ -23,10 +23,65 @@ export interface OpenAIResponse {
   generatedFiles?: GeneratedFile[] | undefined;
 }
 
-export const OPENAI_API_KEY =
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_OPENAI_API_KEY) ||
-  (typeof process !== "undefined" ? process.env?.OPENAI_API_KEY || process.env?.VITE_OPENAI_API_KEY : "") ||
-  "";
+export function getOpenAIApiKey(): string {
+  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_OPENAI_API_KEY) {
+    return import.meta.env.VITE_OPENAI_API_KEY;
+  }
+  if (typeof process !== "undefined") {
+    return process.env?.OPENAI_API_KEY || process.env?.VITE_OPENAI_API_KEY || "";
+  }
+  return "";
+}
+
+export const OPENAI_API_KEY = getOpenAIApiKey();
+
+/**
+ * Universal proxy caller for OpenAI API
+ * Uses /api/openai/v1 in the browser to eliminate CORS errors, with fallback to direct api.openai.com
+ */
+async function callOpenAIApi(subpath: string, payload: any, apiKey: string): Promise<Response> {
+  const isBrowser = typeof window !== "undefined";
+  const primaryUrl = isBrowser ? `/api/openai/v1${subpath}` : `https://api.openai.com/v1${subpath}`;
+  const fallbackUrl = `https://api.openai.com/v1${subpath}`;
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+  };
+
+  try {
+    const response = await fetch(primaryUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+
+    if (response.status !== 404 && response.status !== 502 && response.status !== 504) {
+      return response;
+    }
+
+    if (primaryUrl !== fallbackUrl) {
+      console.warn(`Primary proxy endpoint ${primaryUrl} returned ${response.status}, trying direct endpoint...`);
+      return await fetch(fallbackUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+    }
+
+    return response;
+  } catch (err) {
+    if (primaryUrl !== fallbackUrl) {
+      console.warn(`Primary fetch to ${primaryUrl} failed, falling back to direct endpoint:`, err);
+      return await fetch(fallbackUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+    }
+    throw err;
+  }
+}
 
 /**
  * Detect if prompt asks to generate/draw/create an image
@@ -106,7 +161,7 @@ function extractImagePrompt(raw: string): string {
  */
 export async function generateImageWithOpenAI(prompt: string): Promise<OpenAIResponse> {
   const cleanPrompt = extractImagePrompt(prompt);
-  const apiKey = OPENAI_API_KEY;
+  const apiKey = getOpenAIApiKey() || OPENAI_API_KEY;
 
   if (!apiKey) {
     return {
@@ -121,21 +176,18 @@ export async function generateImageWithOpenAI(prompt: string): Promise<OpenAIRes
   }
 
   try {
-    const response = await fetch("https://api.openai.com/v1/images/generations", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
+    const response = await callOpenAIApi(
+      "/images/generations",
+      {
         model: "dall-e-3",
         prompt: cleanPrompt,
         n: 1,
         size: "1024x1024",
         quality: "standard",
         response_format: "url",
-      }),
-    });
+      },
+      apiKey
+    );
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
@@ -163,20 +215,17 @@ export async function generateImageWithOpenAI(prompt: string): Promise<OpenAIRes
 }
 
 async function fallbackDallE2(prompt: string, apiKey: string): Promise<OpenAIResponse> {
-  const response = await fetch("https://api.openai.com/v1/images/generations", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
+  const response = await callOpenAIApi(
+    "/images/generations",
+    {
       model: "dall-e-2",
       prompt: prompt.slice(0, 1000),
       n: 1,
       size: "512x512",
       response_format: "url",
-    }),
-  });
+    },
+    apiKey
+  );
 
   if (!response.ok) {
     const errData = await response.json().catch(() => ({}));
@@ -404,7 +453,7 @@ export async function executeOpenAIChat({
     }
   }
 
-  const apiKey = OPENAI_API_KEY;
+  const apiKey = getOpenAIApiKey() || OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OpenAI API Key is missing. Please provide VITE_OPENAI_API_KEY in frontend/.env or Vercel Environment Variables.");
   }
@@ -412,9 +461,13 @@ export async function executeOpenAIChat({
   // 2. Build system instructions tailored to domain and sovereign workbench
   let systemPrompt =
     `You are the Bastion Sovereign AI Assistant for ${companyName || "the organization"}.\n` +
-    `The user is authenticated under Department Role: [${userRole.toUpperCase()}].\n` +
-    `You provide authoritative, precise, professional, and well-structured technical answers.\n` +
-    `Use clean Markdown formatting, code fences with syntax highlighting, bullet points, and concise executive summaries.\n\n` +
+    `You are an articulate, highly capable enterprise conversational AI. You read, comprehend, and answer complex questions with clarity, technical rigor, and deep contextual understanding.\n` +
+    `The user is authenticated under Department Role: [${userRole.toUpperCase()}].\n\n` +
+    `COMMUNICATION QUALITY & TONE DIRECTIVES:\n` +
+    `- Answer like a top-tier executive conversational chatbot (direct, articulate, helpful, and insightful).\n` +
+    `- NEVER output robotic template fillers, fragmented uppercase chunks, or repetitive security disclaimers.\n` +
+    `- Format your response using clean, beautiful Markdown: bold headings, structured sections, bulleted lists where helpful, and cohesive paragraphs.\n` +
+    `- Clean up any uppercase styling, spacing artifacts, or OCR noise from the source PDF text so your output is natural and easy to read.\n\n` +
     `[REAL DELIVERABLE FILE CREATION CAPABILITIES]:\n` +
     `You are equipped with tools to directly create downloadable files for the user:\n` +
     `- 'create_word_document': For Word documents (.docx), reports, memos, SOPs, approval notes, policies.\n` +
@@ -447,13 +500,17 @@ export async function executeOpenAIChat({
   if (passages && passages.length > 0) {
     systemPrompt += `\n=== VERIFIED INTERNAL COMPANY DOCUMENTS (Row Level Security Scope: ${userRole.toUpperCase()}) ===\n`;
     passages.forEach((p, idx) => {
-      systemPrompt += `[Source ${idx + 1}: "${p.documentTitle}" | Role: ${p.category.toUpperCase()} | Similarity: ${Math.round((p.similarity || 0.85) * 100)}%]\n${p.content}\n\n`;
+      systemPrompt += `\n--- [Source ${idx + 1}] "${p.documentTitle}" | Dept: ${p.category.toUpperCase()} | Relevance: ${Math.round((p.similarity || 0.85) * 100)}% ---\n${p.content}\n`;
     });
-    systemPrompt += `CRITICAL RAG GROUNDING INSTRUCTIONS:\n` +
-      `- Ground your answer directly in these verified internal passages.\n` +
-      `- Explicitly cite the sources (e.g., "[Source 1]", "[Source 2]") whenever referencing figures, policies, SLAs, or technical parameters.\n` +
-      `- Highlight specific metrics, clauses, parameters, and SLAs from the texts.\n` +
-      `- If a detail is not present in the verified documents, clearly state that it is not covered in the internal files.\n`;
+    systemPrompt += `\n=== END OF DOCUMENT CONTEXT ===\n\n` +
+      `CRITICAL DOCUMENT SYNTHESIS INSTRUCTIONS:\n` +
+      `1. READ THE PASSAGES THOROUGHLY. These are chunks extracted from real PDF documents. Some may have OCR artifacts (garbled characters, uppercase runs, encoding noise like \\u0003 symbols, or odd letter substitutions like '4HIS' for 'THIS', '7ITH' for 'WITH', '-Y' for 'MY', '9OU' for 'YOU'). When you see such patterns, RECONSTRUCT the intended English text and answer as if you have the clean document.\n` +
+      `2. SYNTHESIZE — do NOT just copy-paste bullets from the source. Interpret, explain, and narrate the content in clear, fluent, natural English paragraphs.\n` +
+      `3. For specific section queries (e.g. "FROM THE CHAIRMAN'S DESK", "VPN support guidelines", "financial summary"), find the relevant passage and deliver a COMPLETE explanation of what it says — who wrote it, key themes, metrics, dates, and milestones.\n` +
+      `4. For multi-year or multi-document queries, synthesize comparisons and timelines clearly using the data from the retrieved passages.\n` +
+      `5. Cite your sources inline: [Source 1], [Source 2], etc. when referencing specific facts, numbers, or quotes.\n` +
+      `6. If certain details are NOT covered in the passages, clearly state that those specific details were not found in the retrieved excerpts, and summarize what IS covered.\n` +
+      `7. NEVER output raw OCR garbage, fragmented uppercase runs, or control characters — always present clean, readable English.\n`;
   } else {
     if (modelTag === "code" || /python|javascript|typescript|c\+\+|sql|code|script/i.test(prompt)) {
       systemPrompt += `\nYou are operating in high-performance coding sandbox mode. Provide complete, production-ready, cleanly typed code with inline comments and execution examples.`;
@@ -476,13 +533,9 @@ export async function executeOpenAIChat({
     : prompt;
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
+    const response = await callOpenAIApi(
+      "/chat/completions",
+      {
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
@@ -490,10 +543,11 @@ export async function executeOpenAIChat({
         ],
         tools: FILE_GENERATION_TOOLS,
         tool_choice: "auto",
-        temperature: 0.3,
-        max_tokens: 2200,
-      }),
-    });
+        temperature: 0.2,
+        max_tokens: 4000,
+      },
+      apiKey
+    );
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));

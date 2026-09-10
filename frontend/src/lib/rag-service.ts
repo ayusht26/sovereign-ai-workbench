@@ -102,15 +102,31 @@ export function generateLocalEmbedding(text: string): number[] {
 /**
  * Retrieve document chunks from Supabase with Row Level Security enforcement
  */
+/**
+ * Clean corrupted OCR text from PDF extraction (handles control characters,
+ * misencoded chars common in pypdf output from IOCL annual reports etc.)
+ */
+export function cleanOcrText(text: string): string {
+  return text
+    // Remove null bytes and common PDF control chars
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ")
+    // Remove unicode private-use / symbol chars that pypdf garbles
+    .replace(/[\u0003\u0006\u0007\u000E\u000F\u0010-\u001F]/g, " ")
+    // Fix common pypdf letter-substitution patterns (e.g. \u0003 used as space)
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export async function retrieveChunksForUser(
   query: string,
   userId: string,
   companyId: string,
   userRole: UserRole,
-  limit: number = 4,
+  limit: number = 8,
 ): Promise<RetrievedPassage[]> {
   try {
     // 1. Try high-precision PostgreSQL ranked text search RPC first
+    //    Uses updated stop-word list that preserves domain terms
     const { data: rankedChunks, error: rankedError } = await supabase.rpc(
       "search_document_chunks_ranked",
       {
@@ -128,7 +144,7 @@ export async function retrieveChunksForUser(
         documentTitle: c.title || "Internal Verified Record",
         category: c.category || "tech",
         chunkIndex: c.chunk_index ?? 0,
-        content: c.content,
+        content: cleanOcrText(c.content),
         similarity: Number((c.similarity || 0.95).toFixed(4)),
       }));
     }
@@ -137,7 +153,7 @@ export async function retrieveChunksForUser(
     const queryVector = await generateEmbedding(query);
     const { data: chunks, error: rpcError } = await supabase.rpc("match_document_chunks", {
       query_embedding: queryVector,
-      match_threshold: 0.20,
+      match_threshold: 0.15,
       match_count: limit,
       filter_company_id: companyId || null,
       filter_category: userRole === "admin" ? null : userRole,
@@ -150,7 +166,7 @@ export async function retrieveChunksForUser(
         documentTitle: c.title || "Company Technical Spec",
         category: c.category || "tech",
         chunkIndex: c.chunk_index ?? 0,
-        content: c.content,
+        content: cleanOcrText(c.content),
         similarity: Number((c.similarity || 0.85).toFixed(4)),
       }));
     }
@@ -173,13 +189,12 @@ async function fallbackKeywordSearch(
   limit: number,
 ): Promise<RetrievedPassage[]> {
   try {
+    // Only generic structural stop words — preserve domain terms like
+    // financial, annual, chairman, report, vpn, budget, policy, guidelines, etc.
     const stopWords = new Set([
       "the", "and", "for", "with", "what", "how", "why", "can", "you", "tell",
-      "about", "show", "this", "that", "from", "have", "please", "me", "give",
-      "explain", "details", "detail", "overview", "summary", "summarise",
-      "summarize", "guidelines", "guideline", "policy", "policies", "report",
-      "reports", "last", "years", "year", "document", "documents", "on", "in",
-      "to", "of", "it", "is", "as", "at", "by", "an", "be", "do", "or", "if",
+      "show", "this", "that", "from", "have", "please", "me", "give",
+      "on", "in", "to", "of", "it", "is", "as", "at", "by", "an", "be", "do", "or", "if",
       "so", "up", "my", "no", "we", "us", "our", "all", "are", "was", "were",
     ]);
 
@@ -196,11 +211,11 @@ async function fallbackKeywordSearch(
           .toLowerCase()
           .replace(/[^a-z0-9\s]/g, " ")
           .split(/\s+/)
-          .filter((t) => t.length >= 3);
+          .filter((t) => t.length >= 2);
 
     if (keywords.length === 0) return [];
 
-    const primaryKeyword = keywords[keywords.length - 1];
+    const primaryKeyword = keywords[0]; // Use first (most specific) term
 
     let queryBuilder = supabase
       .from("document_chunks")
@@ -213,7 +228,7 @@ async function fallbackKeywordSearch(
 
     const { data, error } = await queryBuilder
       .or(keywords.map((k) => `content.ilike.%${k}%`).join(","))
-      .limit(30);
+      .limit(50);
 
     if (error || !data || data.length === 0) {
       const { data: fallbackData } = await supabase
@@ -230,8 +245,8 @@ async function fallbackKeywordSearch(
         documentTitle: item.documents?.title || "Internal Company Record",
         category: item.category,
         chunkIndex: item.chunk_index,
-        content: item.content,
-        similarity: 0.88,
+        content: cleanOcrText(item.content),
+        similarity: 0.75,
       }));
     }
 
@@ -242,7 +257,7 @@ async function fallbackKeywordSearch(
       let matchedTerms = 0;
 
       for (const kw of keywords) {
-        if (title.includes(kw)) score += 25;
+        if (title.includes(kw)) score += 40; // Title matches are highly relevant
         if (content.includes(kw)) {
           matchedTerms++;
           const occurrences = content.split(kw).length - 1;
@@ -257,7 +272,7 @@ async function fallbackKeywordSearch(
         documentTitle: item.documents?.title || "Internal Company Record",
         category: item.category,
         chunkIndex: item.chunk_index,
-        content: item.content,
+        content: cleanOcrText(item.content),
         similarity: Math.min(0.99, Number((0.60 + score / 150).toFixed(4))),
         score,
       };
@@ -593,7 +608,7 @@ export async function executeWorkbenchQuery(
 
   // Only retrieve documents if not casual chat, not pure generic code, and not image request / vision attachment
   if (!isGeneralChat && !isPureCoding && !isImageRequest && !imageDataUrl && userRole !== "guest") {
-    passages = await retrieveChunksForUser(cleanPrompt, userId, companyId, userRole as UserRole, 3);
+    passages = await retrieveChunksForUser(cleanPrompt, userId, companyId, userRole as UserRole, 8);
   }
 
   // Log user query to immutable document_access_logs
@@ -836,51 +851,111 @@ export async function executeWorkbenchQuery(
       }
     }
 
-    // Intelligent synthesis fallback if all external AI providers are offline
+    // -------------------------------------------------------------------------
+    // Local Synthesis Engine: produces proper answers when OpenAI is unavailable
+    // -------------------------------------------------------------------------
     if (passages.length > 0 && passages[0]) {
-      const topPassage = passages[0];
-      const topCategory = topPassage.category.toUpperCase();
 
-      let fallbackAnswer = `### Grounded Operational Analysis [${topCategory}]\n\n`;
-      fallbackAnswer += `Synthesized from verified internal records including **"${topPassage.documentTitle}"** under role clearance \`${userRole}\`:\n\n`;
+      // Deep OCR reconstruction: fixes common pypdf garbling patterns
+      function reconstructOcrLine(line: string): string {
+        let s = line.replace(/\[Page\s*\d+\]/gi, "").trim();
+        s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u0003\u0006\u0007]/g, " ");
+        // Fix common pypdf letter-substitution garbling: "4HIS" -> "THIS", "7ITH" -> "WITH", etc.
+        s = s.replace(/\b4([A-Z]{2,})/g, "T$1");
+        s = s.replace(/\b7([A-Z]{2,})/g, "W$1");
+        s = s.replace(/\b9([A-Z]{2,})/g, "Y$1");
+        s = s.replace(/\b!([A-Z]{2,})/g, "A$1");
+        s = s.replace(/\b-([A-Z])\b/g, "M$1");
+        s = s.replace(/\s{2,}/g, " ").trim();
+        return s;
+      }
 
-      // Extract substantive bullet points rather than dumping raw text
-      const extractedInsights: string[] = [];
+      // Score a line for readability - skip OCR-garbled or trivial lines
+      function isReadableLine(line: string): boolean {
+        if (line.length < 20) return false;
+        if (/^[\d\s.,\-]+$/.test(line)) return false;
+        if (line.startsWith("http")) return false;
+        const nonAscii = (line.match(/[^\x20-\x7E]/g) || []).length;
+        if (nonAscii / line.length > 0.12) return false;
+        // Skip table-of-contents lines (short title + page number)
+        if (/^\s*[\w][\w\s,&]{3,40}\s+\d{1,3}\s*$/.test(line)) return false;
+        return true;
+      }
+
+      // Detect query intent for tailored formatting
+      const qLower = cleanPrompt.toLowerCase();
+      const isChairmanQuery = /chairman|chairman'?s?\s+desk|from the chairman/i.test(qLower);
+      const isFinancialSummaryQuery = /financial|annual report|budget|revenue|profit|capex/i.test(qLower);
+      const isVpnQuery = /vpn|virtual private network/i.test(qLower);
+      const isSupportQuery = /support|helpdesk|help desk|password|ticket|hardware|incident/i.test(qLower);
+      const isMultiYearQuery = /last\s+\d+\s+year|5\s+year|multi.?year|over the year/i.test(qLower);
+
+      // Gather cleaned, readable insights grouped by source document
+      const byDoc = new Map<string, string[]>();
       for (const pass of passages) {
+        const docTitle = pass.documentTitle;
+        if (!byDoc.has(docTitle)) byDoc.set(docTitle, []);
         const lines = pass.content
           .replace(/\[Page\s*\d+\]/gi, "")
-          .split("\n")
-          .map((l) => l.trim())
-          .filter(
-            (l) =>
-              l.length > 30 &&
-              !l.startsWith("http") &&
-              !/^\d+$/.test(l) &&
-              !/^Page\s+\d+/i.test(l)
-          );
+          .split(/\n/)
+          .map((l) => reconstructOcrLine(l.trim()))
+          .filter(isReadableLine);
 
-        for (const line of lines.slice(0, 3)) {
-          if (!extractedInsights.some((e) => e.slice(0, 35) === line.slice(0, 35))) {
-            extractedInsights.push(line);
+        const existing = byDoc.get(docTitle)!;
+        for (const line of lines) {
+          const normalized = line === line.toUpperCase() && line.length > 30
+            ? line.charAt(0).toUpperCase() + line.slice(1).toLowerCase()
+            : line;
+          if (!existing.some((e) => e.slice(0, 40).toLowerCase() === normalized.slice(0, 40).toLowerCase())) {
+            existing.push(normalized);
           }
         }
       }
 
-      if (extractedInsights.length > 0) {
-        fallbackAnswer += `**Key Verified Information:**\n`;
-        extractedInsights.slice(0, 6).forEach((insight) => {
-          fallbackAnswer += `• ${insight}\n`;
-        });
-        fallbackAnswer += `\n`;
+      // Build answer header based on query intent
+      let fallbackAnswer = "";
+      if (isChairmanQuery) {
+        const docTitle = passages[0].documentTitle;
+        fallbackAnswer = `## From the Chairman's Desk — ${docTitle}\n\n`;
+        fallbackAnswer += `Key highlights from the Chairman's message in the **${docTitle}**:\n\n`;
+      } else if (isFinancialSummaryQuery && isMultiYearQuery) {
+        fallbackAnswer = `## Financial Performance Summary — Multi-Year Overview\n\n`;
+        fallbackAnswer += `Synthesis of key highlights from **${byDoc.size} annual report(s)** in the corpus:\n\n`;
+      } else if (isVpnQuery || isSupportQuery) {
+        fallbackAnswer = `## IT Support Guidelines — ${passages[0].documentTitle}\n\n`;
+        fallbackAnswer += `Key support procedures and guidelines from internal IT Helpdesk documentation:\n\n`;
+      } else {
+        fallbackAnswer = `## Document Summary\n\n`;
+        fallbackAnswer += `Key findings from **${byDoc.size} relevant document(s)** in the internal corpus:\n\n`;
       }
 
-      fallbackAnswer += `**Governance & Security Verification:**\n`;
-      fallbackAnswer += `• **Document Alignment:** Verified against internal company repository for role \`${userRole}\`.\n`;
-      fallbackAnswer += `• **Row-Level Security:** Chunks retrieved within authorized security partitions.\n`;
-      fallbackAnswer += `• **Zero Outbound Egress:** Synthesized within the sovereign enclave.`;
+      // Render insights organized by source document
+      let insightCount = 0;
+      const maxPerDoc = isMultiYearQuery ? 5 : 8;
+      const maxTotal = isMultiYearQuery ? 18 : 15;
+
+      for (const [docTitle, lines] of byDoc.entries()) {
+        if (insightCount >= maxTotal) break;
+        if (lines.length === 0) continue;
+        if (byDoc.size > 1) {
+          fallbackAnswer += `### 📄 ${docTitle}\n\n`;
+        }
+        for (const line of lines.slice(0, maxPerDoc)) {
+          if (insightCount >= maxTotal) break;
+          fallbackAnswer += `- ${line}\n`;
+          insightCount++;
+        }
+        fallbackAnswer += "\n";
+      }
+
+      if (insightCount === 0) {
+        fallbackAnswer += `> No readable content could be extracted. The source PDFs may have severe OCR encoding issues.\n\n`;
+      }
+
+      fallbackAnswer += `\n---\n> ⚠️ **Note:** The AI synthesis engine (OpenAI GPT) is currently unavailable — the API key in \`frontend/.env\` needs to be updated. The above is a direct extraction from internal documents. Once an active API key is provided, responses will be fully synthesized in natural language.\n`;
 
       if (fallbackFiles && fallbackFiles.length > 0) {
-        fallbackAnswer += `\n\nGenerated deliverable: \`${fallbackFiles[0]?.name}\`. Download available below.`;
+        fallbackAnswer += `\nGenerated deliverable: \`${fallbackFiles[0]?.name}\`. Download available below.`;
       }
 
       return {
@@ -893,6 +968,7 @@ export async function executeWorkbenchQuery(
         generatedFiles: fallbackFiles,
       };
     }
+
 
     if (isPureCoding) {
       const fallbackAnswer =
