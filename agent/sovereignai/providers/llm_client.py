@@ -77,9 +77,10 @@ class LLMClient:
         *,
         tools: list[dict] | None = None,
         num_ctx: int | None = None,
+        tool_choice: str | dict | None = None,
     ) -> "Generator[StreamChunk, None, None]":
         if self.mode == "api":
-            yield from self._chat_stream_api(model, messages, tools)
+            yield from self._chat_stream_api(model, messages, tools, tool_choice)
         else:
             yield from self._chat_stream_local(model, messages, tools, num_ctx)
 
@@ -116,7 +117,7 @@ class LLMClient:
         yield StreamChunk(done=True)
 
     # ── api streaming (OpenRouter SSE, NATIVE tool-calling) ─────────────
-    def _chat_stream_api(self, model, messages, tools=None):
+    def _chat_stream_api(self, model, messages, tools=None, tool_choice=None):
         cfg = self._cfg
         api_key = os.environ.get(cfg.provider_api_key_env, "")
         if not api_key:
@@ -126,6 +127,8 @@ class LLMClient:
         payload = {"model": model, "messages": messages, "stream": True, "temperature": 0}
         if tools:
             payload["tools"] = tools
+        if tool_choice:
+            payload["tool_choice"] = tool_choice
 
         # require_parameters=True restricts routing to providers that actually
         # support the requested params (here: native tool-calling) — confirmed
