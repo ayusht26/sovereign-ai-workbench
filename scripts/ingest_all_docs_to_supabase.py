@@ -33,7 +33,7 @@ ADMIN_PASSWORD = "admin123"
 OPENAI_API_KEY = (
     os.getenv("OPENAI_API_KEY")
     or os.getenv("VITE_OPENAI_API_KEY")
-    or "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"
+    or ""
 )
 
 # ---------------------------------------------------------------------------
