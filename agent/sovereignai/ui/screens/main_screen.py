@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from textual import work
+from textual import events, work
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
@@ -27,6 +27,7 @@ from textual.widgets import Input, Static, Label, Footer
 from sovereignai.orchestrator.agent_loop import run_agent_turn
 from sovereignai.ui.widgets.chat_thread import ChatThread
 from sovereignai.ui.widgets.status_bar import StatusBar
+from sovereignai.ui.widgets.suggestion_box import SuggestionBox, CommandItem
 def _build_banner(mode: str = "local") -> str:
     lines = [
         r"[bold #5FA8D3]██████╗  █████╗ ███████╗████████╗██╗ ██████╗  ███╗   ██╗[/]",
@@ -156,6 +157,51 @@ class InfoPanel(Static):
             pass
 
 
+class ChatInput(Input):
+    """
+    Input box that routes navigation keys (up, down, tab, escape) to the
+    OpenCode-style suggestion popup when active.
+    """
+    _skip_next_change: bool = False
+
+    def on_key(self, event: events.Key) -> None:
+        try:
+            sugg = self.screen.query_one("#suggestion-box", SuggestionBox)
+        except Exception:
+            return
+
+        if sugg.is_active:
+            if event.key == "up":
+                sugg.select_prev()
+                event.prevent_default()
+                event.stop()
+                return
+            elif event.key == "down":
+                sugg.select_next()
+                event.prevent_default()
+                event.stop()
+                return
+            elif event.key == "escape":
+                sugg.hide()
+                event.prevent_default()
+                event.stop()
+                return
+            elif event.key == "tab":
+                selected = sugg.get_selected()
+                if selected:
+                    cmd_to_insert = selected.alias_of or selected.cmd
+                    self._skip_next_change = True
+                    if selected.takes_args:
+                        self.value = f"{cmd_to_insert} "
+                    else:
+                        self.value = cmd_to_insert
+                    self.cursor_position = len(self.value)
+                    sugg.hide()
+                event.prevent_default()
+                event.stop()
+                return
+
+
 class MainScreen(Screen):
     """Primary SovereignAI screen."""
 
@@ -232,8 +278,9 @@ class MainScreen(Screen):
                 yield ChatThread(id="chat-thread")
                 with Vertical(id="input-zone"):
                     yield Static("", id="thinking-bar")
-                    yield Input(
-                        placeholder='Ask anything… or type /help for commands',
+                    yield SuggestionBox(id="suggestion-box")
+                    yield ChatInput(
+                        placeholder='Ask anything… or type / for suggestions',
                         id="input-box",
                     )
                     yield Static(
@@ -287,9 +334,59 @@ class MainScreen(Screen):
 
     # ── Input handling ─────────────────────────────────────────────────────
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id != "input-box":
+            return
+        if getattr(event.input, "_skip_next_change", False):
+            event.input._skip_next_change = False
+            return
+        val = event.value
+        try:
+            sugg = self.query_one("#suggestion-box", SuggestionBox)
+            if val.startswith("/"):
+                sugg.update_query(val)
+            else:
+                sugg.hide()
+        except Exception:
+            pass
+
+    def on_suggestion_box_selected(self, event: SuggestionBox.Selected) -> None:
+        input_box = self.query_one("#input-box", Input)
+        cmd = event.item.alias_of or event.item.cmd
+        if event.auto_run:
+            input_box.clear()
+            self.run_worker(self._handle_slash(cmd))
+        else:
+            input_box.value = f"{cmd} "
+            input_box.cursor_position = len(input_box.value)
+            input_box.focus()
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
+
+        # If suggestion box is active and user pressed Enter, process highlighted suggestion
+        try:
+            sugg = self.query_one("#suggestion-box", SuggestionBox)
+            if sugg.is_active:
+                selected = sugg.get_selected()
+                sugg.hide()
+                if selected:
+                    cmd = selected.alias_of or selected.cmd
+                    if selected.takes_args and text == selected.cmd:
+                        event.input.value = f"{cmd} "
+                        event.input.cursor_position = len(event.input.value)
+                        return
+                    elif not selected.takes_args and text == selected.cmd:
+                        event.input.clear()
+                        self.run_worker(self._handle_slash(cmd))
+                        return
+        except Exception:
+            pass
+
         if not text:
+            return
+        if text.lower() in ("/exit", "/quit"):
+            self.app.exit()
             return
         if self._is_generating:
             self.notify("Generation in progress — press ESC to interrupt.")
@@ -306,12 +403,89 @@ class MainScreen(Screen):
         head = parts[0].lower()
         chat = self.query_one("#chat-thread", ChatThread)
 
-        if head == "/models":
+        if head in ("/exit", "/quit"):
+            self.app.exit()
+            return
+        elif head == "/models":
             await self._open_model_palette()
         elif head == "/auto":
             self._model_override = None
             self._update_meta()
             await chat.add_system_message("Switched to AUTO model selection.", "info")
+        elif head in ("/agents", "/role"):
+            if len(parts) > 1:
+                target_role = parts[1].lower()
+                if target_role in ("admin", "tech", "finance", "support", "guest"):
+                    self._session.user_role = target_role
+                    self.app.user_role = target_role
+                    os.environ["SOVAI_ROLE"] = target_role
+                    await chat.add_system_message(f"Active role switched to [bold]{target_role}[/].", "info")
+                else:
+                    await chat.add_system_message(f"Invalid role: {target_role}. Options: admin | tech | finance | support", "warning")
+            else:
+                cur_role = getattr(self._session, "user_role", "admin")
+                await chat.add_system_message(
+                    f"Current role: [bold]{cur_role}[/]\nUsage: /agents <admin | tech | finance | support>",
+                    "info",
+                )
+        elif head == "/diff":
+            try:
+                import subprocess
+                flags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+                res = subprocess.run(
+                    ["git", "diff", "--stat"],
+                    cwd=str(self._workspace),
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    creationflags=flags,
+                )
+                st = subprocess.run(
+                    ["git", "status", "--short"],
+                    cwd=str(self._workspace),
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    creationflags=flags,
+                )
+                status_out = st.stdout.strip()
+                diff_out = res.stdout.strip()
+                if not status_out and not diff_out:
+                    await chat.add_system_message("Working tree clean — no uncommitted changes.", "info")
+                else:
+                    msg_lines = ["[bold]Git Status & Diff:[/bold]"]
+                    if status_out:
+                        msg_lines.append(f"[yellow]{status_out}[/yellow]")
+                    if diff_out:
+                        msg_lines.append(f"\n{diff_out}")
+                    await chat.add_system_message("\n".join(msg_lines), "info")
+            except Exception as e:
+                await chat.add_system_message(f"Error checking git diff: {e}", "error")
+        elif head == "/editor":
+            editor = os.environ.get("EDITOR") or "code"
+            try:
+                import subprocess
+                flags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+                subprocess.Popen([editor, str(self._workspace)], creationflags=flags)
+                await chat.add_system_message(f"Opened workspace in {editor}.", "info")
+            except Exception as e:
+                await chat.add_system_message(f"Could not open editor ({editor}): {e}", "warning")
+        elif head == "/init":
+            agents_md = self._workspace / "AGENTS.md"
+            if agents_md.exists():
+                await chat.add_system_message(f"AGENTS.md is already configured in {self._workspace}.", "info")
+            else:
+                template = (
+                    "# AGENTS.md — Project Instructions for Bastion\n\n"
+                    "## Project Context\n"
+                    f"- Workspace: {self._workspace.name}\n"
+                    "- Goal: Enterprise Sovereign AI development and document synthesis\n\n"
+                    "## Development Guidelines\n"
+                    "- Keep all operations local and audited.\n"
+                    "- Follow least-privilege role boundaries.\n"
+                )
+                agents_md.write_text(template, encoding="utf-8")
+                await chat.add_system_message(f"Created guided AGENTS.md in {self._workspace}.", "info")
         elif head == "/net":
             from sovereignai.ui.screens.net_monitor_screen import NetMonitorScreen
             self.app.push_screen(NetMonitorScreen())
@@ -320,9 +494,7 @@ class MainScreen(Screen):
         elif head == "/sessions":
             from sovereignai.ui.screens.session_browser import SessionBrowser
             self.app.push_screen(SessionBrowser())
-        elif head == "/kb":
-            await self._handle_kb(parts)
-        elif head == "/cwd" and len(parts) > 1:
+        elif head in ("/cwd", "/move") and len(parts) > 1:
             p = Path(" ".join(parts[1:])).expanduser().resolve()
             if p.is_dir():
                 self._workspace = p
@@ -331,12 +503,6 @@ class MainScreen(Screen):
                 await chat.add_system_message(f"Workspace → {p}", "info")
             else:
                 await chat.add_system_message(f"Not a directory: {p}", "error")
-        elif head == "/help":
-            await chat.add_system_message(
-                "Commands: /models /auto /net /new /sessions /kb /cwd /help\n"
-                "Keys: ctrl+p (palette)   esc (interrupt)   ctrl+n (new session)",
-                "info",
-            )
         elif head == "/attach" and len(parts) > 1:
             src = Path(" ".join(parts[1:])).expanduser().resolve()
             if not src.exists():
@@ -346,8 +512,29 @@ class MainScreen(Screen):
                 dest = self._workspace / src.name
                 _shutil.copy2(src, dest)
                 await chat.add_system_message(f"📎 Attached {src.name} — reference it in your next message.", "info")
+        elif head == "/kb":
+            await self._handle_kb(parts)
+        elif head == "/help":
+            await chat.add_system_message(
+                "[bold #5FA8D3]Bastion Sovereign AI Commands:[/bold #5FA8D3]\n"
+                "  /models       Switch active model (Auto / Qwen / Coder / Vision)\n"
+                "  /auto         Switch to AUTO router\n"
+                "  /agents       Switch role (admin | tech | finance | support)\n"
+                "  /diff         View git diff & file changes\n"
+                "  /editor       Open workspace in editor\n"
+                "  /net          Toggle live network security monitor\n"
+                "  /kb           Knowledge base (status | add <path>)\n"
+                "  /cwd, /move   Change workspace directory\n"
+                "  /attach       Attach file to workspace\n"
+                "  /init         Initialize AGENTS.md configuration\n"
+                "  /new          Start a new session\n"
+                "  /sessions     Browse past sessions\n"
+                "  /exit         Exit the app\n"
+                "\n[dim]Keys: tab (complete) · esc (close/interrupt) · ctrl+p (palette) · ctrl+n (new)[/dim]",
+                "info",
+            )
         else:
-            await chat.add_system_message(f"Unknown: {cmd}  →  type /help", "warning")
+            await chat.add_system_message(f"Unknown: {cmd}  →  type /help for suggestions", "warning")
 
     async def _handle_kb(self, parts: list[str]) -> None:
         chat = self.query_one("#chat-thread", ChatThread)

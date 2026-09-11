@@ -1,5 +1,5 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { AnimatePresence, motion } from 'motion/react';
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { AnimatePresence, motion } from "motion/react";
 import {
   ChevronDown,
   FileText,
@@ -14,18 +14,15 @@ import {
   Download,
   ImageIcon,
   ShieldAlert,
-} from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import AI_Input_Search from '@/components/kokonutui/ai-input-search';
-import AITextLoading from '@/components/kokonutui/ai-text-loading';
-import { MarkdownMessage } from '@/components/ui/markdown-message';
-import { FileDeliverableCard } from '@/components/chat/file-card';
-import { cn } from '@/lib/utils';
-import { useAuth } from '@/lib/auth-context';
-import {
-  executeWorkbenchQuery,
-  RetrievedPassage,
-} from '@/lib/rag-service';
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import AI_Input_Search from "@/components/kokonutui/ai-input-search";
+import AITextLoading from "@/components/kokonutui/ai-text-loading";
+import { MarkdownMessage } from "@/components/ui/markdown-message";
+import { FileDeliverableCard } from "@/components/chat/file-card";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
+import { executeWorkbenchQuery, RetrievedPassage } from "@/lib/rag-service";
 import {
   ChatMessage,
   ChatSession,
@@ -33,9 +30,9 @@ import {
   saveUserChatSession,
   deleteUserChatSession,
   clearAllUserChatSessions,
-} from '@/lib/chat-storage';
-import { BastionMark } from '@/components/site/parallax-hero';
-import ProfileDropdown from '@/components/kokonutui/profile-dropdown';
+} from "@/lib/chat-storage";
+import { BastionMark } from "@/components/site/parallax-hero";
+import ProfileDropdown from "@/components/kokonutui/profile-dropdown";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,48 +42,53 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from "@/components/ui/alert-dialog";
 
-export const Route = createFileRoute('/chat')({
+export const Route = createFileRoute("/chat")({
   head: () => ({
     meta: [
-      { title: 'Workbench — Bastion Sovereign AI Chat' },
+      { title: "Workbench — Bastion Sovereign AI Chat" },
       {
-        name: 'description',
+        name: "description",
         content:
-          'Multi-tenant role-segregated RAG chat. Row Level Security guarantees strict document partition by department and company.',
+          "Multi-tenant role-segregated RAG chat. Row Level Security guarantees strict document partition by department and company.",
       },
-      { property: 'og:title', content: 'Workbench — Bastion Sovereign AI Chat' },
+      { property: "og:title", content: "Workbench — Bastion Sovereign AI Chat" },
       {
-        property: 'og:description',
+        property: "og:description",
         content:
-          'On-premise agentic chat with automatic model routing and Postgres RLS security boundary.',
+          "On-premise agentic chat with automatic model routing and Postgres RLS security boundary.",
       },
-      { property: 'og:type', content: 'website' },
-      { name: 'twitter:card', content: 'summary_large_image' },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: ChatPage,
 });
 
 const MODELS = [
-  { id: 'auto', name: 'Auto router', detail: 'Picks best sovereign tier per task', tag: 'recommended' },
   {
-    id: 'reasoning',
-    name: 'Qwen3.6-27B',
-    detail: 'Synthesis, notes, SOP checks',
-    tag: 'reasoning',
+    id: "auto",
+    name: "Auto router",
+    detail: "Picks best sovereign tier per task",
+    tag: "recommended",
   },
-  { id: 'coding', name: 'Qwen3-Coder-Next', detail: 'Patches, scripts, sandbox runs', tag: 'code' },
-  { id: 'vision', name: 'Qwen3-VL-32B', detail: 'Scans, tables, visual diffusion', tag: 'vision' },
-  { id: 'lite', name: 'Qwen3.5-8B', detail: 'Fast drafts, low GPU load', tag: 'lite' },
+  {
+    id: "reasoning",
+    name: "Qwen3.6-27B",
+    detail: "Synthesis, notes, SOP checks",
+    tag: "reasoning",
+  },
+  { id: "coding", name: "Qwen3-Coder-Next", detail: "Patches, scripts, sandbox runs", tag: "code" },
+  { id: "vision", name: "Qwen3-VL-32B", detail: "Scans, tables, visual diffusion", tag: "vision" },
+  { id: "lite", name: "Qwen3.5-8B", detail: "Fast drafts, low GPU load", tag: "lite" },
 ];
 
 function ChatPage() {
   const navigate = useNavigate();
   const { user, profile, company, role, loading } = useAuth();
 
-  const [selected, setSelected] = useState('auto');
+  const [selected, setSelected] = useState("auto");
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -108,7 +110,7 @@ function ChatPage() {
   // Protected route check
   useEffect(() => {
     if (!loading && !user) {
-      navigate({ to: '/login' });
+      navigate({ to: "/login" });
     }
   }, [loading, user, navigate]);
 
@@ -119,18 +121,18 @@ function ChatPage() {
   }, [user?.id]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
 
   const active = useMemo(
     () =>
       MODELS.find((m) => m.id === selected) ?? {
-        id: 'auto',
-        name: 'Auto router',
-        detail: 'Picks the best tier per task',
-        tag: 'recommended',
+        id: "auto",
+        name: "Auto router",
+        detail: "Picks the best tier per task",
+        tag: "recommended",
       },
-    [selected]
+    [selected],
   );
 
   const handleNewRun = () => {
@@ -177,12 +179,12 @@ function ChatPage() {
     }));
   };
 
-  const handleDownloadImage = async (url: string, filename: string = 'sovereign-ai-render.png') => {
+  const handleDownloadImage = async (url: string, filename: string = "sovereign-ai-render.png") => {
     try {
       const res = await fetch(url);
       const blob = await res.blob();
       const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = blobUrl;
       link.download = filename;
       document.body.appendChild(link);
@@ -190,7 +192,7 @@ function ChatPage() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
     } catch {
-      window.open(url, '_blank');
+      window.open(url, "_blank");
     }
   };
 
@@ -198,17 +200,18 @@ function ChatPage() {
     raw?: string,
     isWebSearch: boolean = false,
     attachedFile?: File | null,
-    imageDataUrl?: string | null
+    imageDataUrl?: string | null,
   ) => {
-    const text = (raw ?? '').trim();
+    const text = (raw ?? "").trim();
     if ((!text && !attachedFile && !imageDataUrl) || busy) return;
 
     const userMsgId = crypto.randomUUID();
-    const queryDisplayText = text || (imageDataUrl ? 'Attached image context' : `Uploaded file: ${attachedFile?.name}`);
+    const queryDisplayText =
+      text || (imageDataUrl ? "Attached image context" : `Uploaded file: ${attachedFile?.name}`);
 
     const userMsg: ChatMessage = {
       id: userMsgId,
-      role: 'user',
+      role: "user",
       text: queryDisplayText,
       attachedFileName: attachedFile?.name,
       attachedImageDataUrl: imageDataUrl || undefined,
@@ -242,15 +245,15 @@ function ChatPage() {
     setBusy(true);
 
     try {
-      const activeUserId = user?.id || '00000000-0000-0000-0000-000000000000';
-      const activeCompanyId = profile?.company_id || '00000000-0000-0000-0000-000000000000';
-      const activeRole = role || 'support';
-      const companyName = company?.name || 'Indian Oil Corporation Limited';
+      const activeUserId = user?.id || "00000000-0000-0000-0000-000000000000";
+      const activeCompanyId = profile?.company_id || "00000000-0000-0000-0000-000000000000";
+      const activeRole = role || "support";
+      const companyName = company?.name || "Indian Oil Corporation Limited";
 
       const promptText =
         text ||
         (imageDataUrl
-          ? 'Please analyze and inspect the attached image in detail.'
+          ? "Please analyze and inspect the attached image in detail."
           : `Please analyze attached document: ${attachedFile?.name}`);
 
       const queryRes = await executeWorkbenchQuery(
@@ -259,16 +262,16 @@ function ChatPage() {
         activeCompanyId,
         activeRole,
         companyName,
-        selected === 'auto' ? 'auto' : active.name,
+        selected === "auto" ? "auto" : active.name,
         isWebSearch,
-        imageDataUrl || undefined
+        imageDataUrl || undefined,
       );
 
       const hasPassages = Boolean(queryRes.passages && queryRes.passages.length > 0);
 
       const assistantMsg: ChatMessage = {
         id: crypto.randomUUID(),
-        role: 'assistant',
+        role: "assistant",
         text: queryRes.answer,
         routedTo: queryRes.model,
         reason: queryRes.reason,
@@ -295,13 +298,13 @@ function ChatPage() {
       };
       saveUserChatSession(finalSession, user?.id);
       setChatSessions(fetchUserChatSessions(user?.id));
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errorMsg: ChatMessage = {
         id: crypto.randomUUID(),
-        role: 'assistant',
-        text: `Error synthesizing response: ${err?.message || 'Inference execution exception'}`,
+        role: "assistant",
+        text: `Error synthesizing response: ${(err as Error)?.message || "Inference execution exception"}`,
         routedTo: active.name,
-        reason: 'Local node execution fallback',
+        reason: "Local node execution fallback",
         createdAt: new Date().toISOString(),
       };
       const finalMessages = [...newMessages, errorMsg];
@@ -333,14 +336,15 @@ function ChatPage() {
           </Link>
           <span
             className={cn(
-              'rounded px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase',
-              role === 'admin' && 'bg-purple-500/20 text-purple-400 border border-purple-500/30',
-              role === 'tech' && 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
-              role === 'finance' && 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
-              role === 'support' && 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+              "rounded px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase",
+              role === "admin" && "bg-purple-500/20 text-purple-400 border border-purple-500/30",
+              role === "tech" && "bg-blue-500/20 text-blue-400 border border-blue-500/30",
+              role === "finance" &&
+                "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30",
+              role === "support" && "bg-amber-500/20 text-amber-400 border border-amber-500/30",
             )}
           >
-            {role || 'guest'}
+            {role || "guest"}
           </span>
         </div>
 
@@ -353,7 +357,7 @@ function ChatPage() {
             <Plus className="h-4 w-4" /> New run
           </button>
 
-          {role === 'admin' && (
+          {role === "admin" && (
             <Link
               to="/admin"
               className="flex w-full items-center gap-2 rounded-[3px] border border-signal-orange/30 bg-signal-orange/10 px-3 py-2 text-xs font-mono font-semibold text-signal-orange hover:bg-signal-orange/20 transition cursor-pointer"
@@ -400,7 +404,7 @@ function ChatPage() {
                       "group flex items-center justify-between rounded-[4px] px-2.5 py-2 text-xs transition-colors cursor-pointer",
                       isActive
                         ? "bg-carbon-lift text-bone font-medium border border-carbon-lift"
-                        : "text-warm-granite hover:bg-carbon-lift/50 hover:text-bone"
+                        : "text-warm-granite hover:bg-carbon-lift/50 hover:text-bone",
                     )}
                   >
                     <span className="truncate pr-1">› {session.title}</span>
@@ -444,7 +448,7 @@ function ChatPage() {
               >
                 <span className="eyebrow text-signal-orange">{active.tag}</span>
                 {active.name}
-                <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
+                <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
               </button>
 
               <AnimatePresence>
@@ -516,13 +520,14 @@ function ChatPage() {
                 className="py-12"
               >
                 <div className="eyebrow text-warm-granite">
-                  authenticated session · {company?.name || 'Indian Oil Corporation Limited'}
+                  authenticated session · {company?.name || "Indian Oil Corporation Limited"}
                 </div>
                 <h1 className="mt-3 text-heading tracking-[-0.031em] text-bone">
                   What are we forging today?
                 </h1>
                 <p className="mt-3 max-w-lg text-body text-warm-granite">
-                  Ask document-grounded questions, request code generation, or generate visual blueprints.
+                  Ask document-grounded questions, request code generation, or generate visual
+                  blueprints.
                 </p>
               </motion.div>
             )}
@@ -534,9 +539,9 @@ function ChatPage() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                  className={cn(m.role === 'user' && 'flex justify-end')}
+                  className={cn(m.role === "user" && "flex justify-end")}
                 >
-                  {m.role === 'user' ? (
+                  {m.role === "user" ? (
                     <div className="max-w-[85%] rounded-[10px] bg-bone px-4 py-3 text-body-sm text-obsidian-canvas font-medium shadow-sm space-y-2">
                       {m.attachedImageDataUrl && (
                         <div className="overflow-hidden rounded-lg border border-black/10 bg-black/5 p-1 max-w-[260px]">
@@ -544,7 +549,7 @@ function ChatPage() {
                             src={m.attachedImageDataUrl}
                             alt="Attached user context"
                             className="max-h-48 w-full object-cover rounded-md cursor-pointer hover:opacity-95 transition"
-                            onClick={() => window.open(m.attachedImageDataUrl, '_blank')}
+                            onClick={() => window.open(m.attachedImageDataUrl, "_blank")}
                           />
                         </div>
                       )}
@@ -566,21 +571,24 @@ function ChatPage() {
                           onClick={() => toggleReasoning(m.id)}
                           className={cn(
                             "inline-flex items-center gap-1.5 rounded-[4px] border px-2.5 py-1 text-[11px] font-mono transition cursor-pointer",
-                            m.routedTo === 'RLS-Policy-Guard'
+                            m.routedTo === "RLS-Policy-Guard"
                               ? "border-red-500/50 bg-red-500/10 text-red-400 hover:border-red-500/80"
-                              : "border-carbon-lift/80 bg-carbon-lift/30 text-warm-granite hover:text-bone hover:border-ash-stroke"
+                              : "border-carbon-lift/80 bg-carbon-lift/30 text-warm-granite hover:text-bone hover:border-ash-stroke",
                           )}
                         >
-                          {m.routedTo === 'RLS-Policy-Guard' ? (
+                          {m.routedTo === "RLS-Policy-Guard" ? (
                             <ShieldAlert className="h-3 w-3 text-red-400" />
                           ) : (
                             <Sparkles className="h-3 w-3 text-signal-orange" />
                           )}
-                          <span>{m.routedTo || 'Auto router'} · {expandedReasoning[m.id] ? 'Hide policy' : 'Show policy'}</span>
+                          <span>
+                            {m.routedTo || "Auto router"} ·{" "}
+                            {expandedReasoning[m.id] ? "Hide policy" : "Show policy"}
+                          </span>
                           <ChevronDown
                             className={cn(
-                              'h-3 w-3 transition-transform duration-200',
-                              expandedReasoning[m.id] && 'rotate-180'
+                              "h-3 w-3 transition-transform duration-200",
+                              expandedReasoning[m.id] && "rotate-180",
                             )}
                           />
                         </button>
@@ -593,11 +601,14 @@ function ChatPage() {
                             className="inline-flex items-center gap-1.5 rounded-[4px] border border-carbon-lift/80 bg-carbon-lift/30 px-2.5 py-1 text-[11px] font-mono text-warm-granite hover:text-bone hover:border-ash-stroke transition cursor-pointer"
                           >
                             <FileText className="h-3 w-3 text-signal-orange" />
-                            <span>Grounded citations ({m.passages.length}) · {expandedSources[m.id] ? 'Hide' : 'Show'}</span>
+                            <span>
+                              Grounded citations ({m.passages.length}) ·{" "}
+                              {expandedSources[m.id] ? "Hide" : "Show"}
+                            </span>
                             <ChevronDown
                               className={cn(
-                                'h-3 w-3 transition-transform duration-200',
-                                expandedSources[m.id] && 'rotate-180'
+                                "h-3 w-3 transition-transform duration-200",
+                                expandedSources[m.id] && "rotate-180",
                               )}
                             />
                           </button>
@@ -609,15 +620,19 @@ function ChatPage() {
                         {expandedReasoning[m.id] && (
                           <motion.div
                             initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
+                            animate={{ opacity: 1, height: "auto" }}
                             exit={{ opacity: 0, height: 0 }}
                             transition={{ duration: 0.2 }}
                             className="overflow-hidden"
                           >
                             <div className="rounded-[8px] border border-carbon-lift bg-[#111111] p-3 text-xs font-mono space-y-2">
                               <div className="flex items-center gap-2">
-                                <span className="text-signal-orange font-semibold">ROUTED → {m.routedTo}</span>
-                                <span className="text-[10px] text-warm-granite/70">({m.reason})</span>
+                                <span className="text-signal-orange font-semibold">
+                                  ROUTED → {m.routedTo}
+                                </span>
+                                <span className="text-[10px] text-warm-granite/70">
+                                  ({m.reason})
+                                </span>
                               </div>
                               {m.steps && m.steps.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5 pt-1">
@@ -641,7 +656,7 @@ function ChatPage() {
                         {expandedSources[m.id] && m.passages && m.passages.length > 0 && (
                           <motion.div
                             initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
+                            animate={{ opacity: 1, height: "auto" }}
                             exit={{ opacity: 0, height: 0 }}
                             transition={{ duration: 0.2 }}
                             className="overflow-hidden"
@@ -663,7 +678,9 @@ function ChatPage() {
                                         {p.category}
                                       </span>
                                     </div>
-                                    <div className="text-warm-granite line-clamp-3 leading-relaxed">{p.content}</div>
+                                    <div className="text-warm-granite line-clamp-3 leading-relaxed">
+                                      {p.content}
+                                    </div>
                                   </div>
                                 ))}
                               </div>
@@ -678,13 +695,15 @@ function ChatPage() {
                           <div className="relative group overflow-hidden rounded-[8px] bg-black/50">
                             <img
                               src={m.imageUrl}
-                              alt={m.revisedPrompt || 'Sovereign AI Asset'}
+                              alt={m.revisedPrompt || "Sovereign AI Asset"}
                               className="w-full max-h-[500px] object-contain rounded-[8px] transition-transform duration-300 group-hover:scale-[1.01]"
                             />
                             <div className="absolute top-3 right-3 flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => handleDownloadImage(m.imageUrl!, `sovereign-ai-${Date.now()}.png`)}
+                                onClick={() =>
+                                  handleDownloadImage(m.imageUrl!, `sovereign-ai-${Date.now()}.png`)
+                                }
                                 className="flex items-center gap-1.5 rounded-lg bg-black/80 backdrop-blur-md border border-white/20 px-3 py-1.5 text-xs font-semibold text-white shadow-lg transition hover:bg-signal-orange hover:text-black cursor-pointer"
                                 title="Download generated image"
                               >
@@ -701,7 +720,9 @@ function ChatPage() {
                             </div>
                             <button
                               type="button"
-                              onClick={() => handleDownloadImage(m.imageUrl!, `sovereign-ai-${Date.now()}.png`)}
+                              onClick={() =>
+                                handleDownloadImage(m.imageUrl!, `sovereign-ai-${Date.now()}.png`)
+                              }
                               className="text-signal-orange hover:underline flex items-center gap-1 cursor-pointer text-xs"
                             >
                               <Download className="h-3 w-3" /> Save to disk
@@ -711,7 +732,7 @@ function ChatPage() {
                       )}
 
                       {/* Main Message Text & Rich Code Block Content */}
-                      {m.routedTo === 'RLS-Policy-Guard' ? (
+                      {m.routedTo === "RLS-Policy-Guard" ? (
                         <div className="rounded-[8px] border border-red-500/40 bg-red-500/10 p-4 mt-2">
                           <div className="flex items-center gap-2 font-mono text-xs text-red-400 font-semibold uppercase mb-1.5">
                             <ShieldAlert className="h-4 w-4 text-red-400" />
@@ -751,10 +772,10 @@ function ChatPage() {
                 <div className="py-2">
                   <AITextLoading
                     texts={[
-                      'Evaluating Postgres RLS security...',
-                      'Executing sovereign model inference...',
-                      'Synthesizing audited response...',
-                      'Polishing technical output...',
+                      "Evaluating Postgres RLS security...",
+                      "Executing sovereign model inference...",
+                      "Synthesizing audited response...",
+                      "Polishing technical output...",
                     ]}
                     className="!text-lg !font-semibold text-bone"
                     interval={1400}
@@ -770,9 +791,26 @@ function ChatPage() {
         <div className="border-t border-carbon-lift bg-obsidian-canvas/90 backdrop-blur-md px-5 py-4">
           <div className="mx-auto max-w-3xl">
             <AI_Input_Search
-              placeholder={`Ask ${role ? `as [${role.toUpperCase()}]` : ''} regarding company docs, code, or paste images…`}
+              placeholder={`Ask ${role ? `as [${role.toUpperCase()}]` : ""} regarding company docs, code, or paste images…`}
               searchLabel="Web Search"
               disabled={busy}
+              onCommand={(cmd) => {
+                if (cmd === "/auto") {
+                  setSelected("auto");
+                } else if (cmd === "/reasoning") {
+                  setSelected("reasoning");
+                } else if (cmd === "/coding") {
+                  setSelected("coding");
+                } else if (cmd === "/vision") {
+                  setSelected("vision");
+                } else if (cmd === "/models") {
+                  setOpen((v) => !v);
+                } else if (cmd === "/clear") {
+                  handleNewRun();
+                } else if (cmd === "/help") {
+                  send("List available sovereign models and workbench capabilities.");
+                }
+              }}
               onSubmit={(text, isWebSearch, file, imageDataUrl) =>
                 send(text, isWebSearch, file, imageDataUrl)
               }
@@ -780,7 +818,7 @@ function ChatPage() {
             <div className="mt-2 flex items-center justify-between px-2 text-[11px] font-mono text-warm-granite">
               <span className="flex items-center gap-1.5">
                 <Lock className="h-3 w-3 text-signal-orange" />
-                RLS Active: {role ? role.toUpperCase() : 'Public'}
+                RLS Active: {role ? role.toUpperCase() : "Public"}
               </span>
               <span>Enter to run · Shift+Enter for newline</span>
             </div>
@@ -789,7 +827,10 @@ function ChatPage() {
       </div>
 
       {/* Delete Single Chat Session Alert Dialog */}
-      <AlertDialog open={Boolean(sessionToDelete)} onOpenChange={(isOpen) => !isOpen && setSessionToDelete(null)}>
+      <AlertDialog
+        open={Boolean(sessionToDelete)}
+        onOpenChange={(isOpen) => !isOpen && setSessionToDelete(null)}
+      >
         <AlertDialogContent className="border-carbon-lift bg-[#121212] text-bone">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-bone">Delete this chat?</AlertDialogTitle>
@@ -817,7 +858,8 @@ function ChatPage() {
           <AlertDialogHeader>
             <AlertDialogTitle className="text-bone">Clear all recent chats?</AlertDialogTitle>
             <AlertDialogDescription className="text-warm-granite text-xs">
-              Are you sure you want to clear all your saved chat sessions? This will permanently delete your conversation history.
+              Are you sure you want to clear all your saved chat sessions? This will permanently
+              delete your conversation history.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

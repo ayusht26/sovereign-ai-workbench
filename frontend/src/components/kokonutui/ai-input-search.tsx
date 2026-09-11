@@ -5,12 +5,89 @@
  * @description: AI Input Search with clipboard paste, image preview thumbnail, web toggle, and auto-resizing textarea
  */
 
-import { Globe, Paperclip, Send, X, FileCheck, ImageIcon, Sparkles } from "lucide-react";
+import {
+  Globe,
+  Paperclip,
+  Send,
+  X,
+  FileCheck,
+  ImageIcon,
+  Sparkles,
+  Brain,
+  Code2,
+  Boxes,
+  HelpCircle,
+  Trash2,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { useAutoResizeTextarea } from "@/hooks/use-auto-resize-textarea";
 import { cn } from "@/lib/utils";
+
+interface SlashCommand {
+  cmd: string;
+  name: string;
+  desc: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+const SLASH_COMMANDS: SlashCommand[] = [
+  {
+    cmd: "/auto",
+    name: "Auto router",
+    desc: "Picks optimal sovereign tier per task",
+    icon: Sparkles,
+  },
+  {
+    cmd: "/reasoning",
+    name: "Qwen3.6-27B",
+    desc: "Synthesis, notes, SOP checks",
+    icon: Brain,
+  },
+  {
+    cmd: "/coding",
+    name: "Qwen3-Coder-Next",
+    desc: "Patches, scripts, sandbox runs",
+    icon: Code2,
+  },
+  {
+    cmd: "/vision",
+    name: "Qwen3-VL-32B",
+    desc: "Scans, tables, visual diffusion",
+    icon: ImageIcon,
+  },
+  {
+    cmd: "/models",
+    name: "Model Selector",
+    desc: "Browse and configure sovereign inference tiers",
+    icon: Boxes,
+  },
+  {
+    cmd: "/search",
+    name: "Web Search",
+    desc: "Toggle live external web knowledge search",
+    icon: Globe,
+  },
+  {
+    cmd: "/attach",
+    name: "Attach Files",
+    desc: "Upload document, spreadsheet, or image",
+    icon: Paperclip,
+  },
+  {
+    cmd: "/clear",
+    name: "Clear Transcript",
+    desc: "Start a new clean run and reset chat",
+    icon: Trash2,
+  },
+  {
+    cmd: "/help",
+    name: "Capabilities Guide",
+    desc: "View available sovereign models and syntax",
+    icon: HelpCircle,
+  },
+];
 
 interface AIInputSearchProps {
   placeholder?: string;
@@ -21,8 +98,9 @@ interface AIInputSearchProps {
     value: string,
     isWebSearch?: boolean,
     file?: File | null,
-    imageDataUrl?: string | null
+    imageDataUrl?: string | null,
   ) => void;
+  onCommand?: (command: string) => void;
   disabled?: boolean;
   className?: string;
 }
@@ -33,6 +111,7 @@ export default function AI_Input_Search({
   value: controlledValue,
   onChange: controlledOnChange,
   onSubmit,
+  onCommand,
   disabled = false,
   className,
 }: AIInputSearchProps) {
@@ -51,6 +130,67 @@ export default function AI_Input_Search({
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Suggestions state
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedSuggestionIdx, setSelectedSuggestionIdx] = useState(0);
+  const suggestionsRef = useRef<HTMLDivElement | null>(null);
+
+  const filteredCommands = useMemo(() => {
+    if (!value.startsWith("/")) return [];
+    const q = value.toLowerCase().trim();
+    const primary = SLASH_COMMANDS.filter((c) => c.cmd.toLowerCase().startsWith(q));
+    if (primary.length > 0) return primary;
+    const needle = q.startsWith("/") ? q.slice(1) : q;
+    return SLASH_COMMANDS.filter(
+      (c) =>
+        c.cmd.toLowerCase().includes(needle) ||
+        c.name.toLowerCase().includes(needle) ||
+        c.desc.toLowerCase().includes(needle),
+    );
+  }, [value]);
+
+  useEffect(() => {
+    if (value.startsWith("/") && filteredCommands.length > 0) {
+      setShowSuggestions(true);
+      setSelectedSuggestionIdx(0);
+    } else {
+      setShowSuggestions(false);
+    }
+  }, [value, filteredCommands.length]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleExecuteCommand = (cmd: string) => {
+    setShowSuggestions(false);
+    if (cmd === "/search") {
+      setShowSearch((prev) => !prev);
+      setValue("");
+      return;
+    }
+    if (cmd === "/attach") {
+      setValue("");
+      fileInputRef.current?.click();
+      return;
+    }
+    if (onCommand) {
+      onCommand(cmd);
+      setValue("");
+      return;
+    }
+    setValue(`${cmd} `);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  };
 
   const setValue = (val: string) => {
     if (!isControlled) {
@@ -166,6 +306,123 @@ export default function AI_Input_Search({
   return (
     <div className={cn("w-full", className)}>
       <div className="relative mx-auto w-full max-w-3xl">
+        {/* Bastion Sovereign Command Palette Suggestions Overlay */}
+        <AnimatePresence>
+          {showSuggestions && filteredCommands.length > 0 && (
+            <motion.div
+              ref={suggestionsRef}
+              initial={{ opacity: 0, y: 8, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              className="absolute bottom-full mb-3 left-0 right-0 z-50 overflow-hidden rounded-2xl border border-carbon-lift bg-[#0d0f14]/95 shadow-2xl backdrop-blur-2xl ring-1 ring-white/5"
+            >
+              {/* Header bar */}
+              <div className="flex items-center justify-between border-b border-carbon-lift px-4 py-2.5 bg-[#090b0f]/80">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-signal-orange animate-pulse" />
+                  <span className="text-[11px] font-mono font-bold tracking-[0.18em] text-signal-orange uppercase">
+                    Commands
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] font-mono text-warm-granite">
+                  <span className="flex items-center gap-1">
+                    <kbd className="rounded border border-white/10 bg-white/5 px-1 py-0.5 text-[9px]">
+                      ↑
+                    </kbd>
+                    <kbd className="rounded border border-white/10 bg-white/5 px-1 py-0.5 text-[9px]">
+                      ↓
+                    </kbd>
+                    <span>navigate</span>
+                  </span>
+                  <span className="text-white/20">·</span>
+                  <span className="flex items-center gap-1">
+                    <kbd className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px]">
+                      Tab
+                    </kbd>
+                    <span>select</span>
+                  </span>
+                  <span className="text-white/20">·</span>
+                  <span className="flex items-center gap-1">
+                    <kbd className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px]">
+                      Esc
+                    </kbd>
+                    <span>close</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Suggestions List */}
+              <div className="max-h-72 overflow-y-auto p-1.5 space-y-0.5">
+                {filteredCommands.map((item, idx) => {
+                  const isSelected = idx === selectedSuggestionIdx;
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.cmd}
+                      type="button"
+                      onMouseEnter={() => setSelectedSuggestionIdx(idx)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleExecuteCommand(item.cmd);
+                      }}
+                      className={cn(
+                        "group relative flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition-all duration-150 cursor-pointer",
+                        isSelected
+                          ? "bg-carbon-lift text-bone border border-signal-orange/40 shadow-sm"
+                          : "text-warm-granite hover:bg-carbon-lift/50 hover:text-bone border border-transparent",
+                      )}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Icon Container */}
+                        <div
+                          className={cn(
+                            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors",
+                            isSelected
+                              ? "border-signal-orange/40 bg-signal-orange/15 text-signal-orange"
+                              : "border-carbon-lift/60 bg-carbon-lift/30 text-warm-granite group-hover:text-bone",
+                          )}
+                        >
+                          <Icon className="h-4 w-4" />
+                        </div>
+
+                        {/* Text details */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={cn(
+                                "font-mono text-xs font-semibold",
+                                isSelected ? "text-signal-orange" : "text-bone",
+                              )}
+                            >
+                              {item.cmd}
+                            </span>
+                            <span className="text-body-sm font-sans text-bone font-medium truncate">
+                              {item.name}
+                            </span>
+                          </div>
+                          <p className="text-[11px] font-sans text-warm-granite truncate">
+                            {item.desc}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Selection return indicator */}
+                      {isSelected && (
+                        <div className="flex items-center shrink-0 ml-2">
+                          <span className="hidden sm:inline-flex items-center rounded bg-signal-orange/10 px-1.5 py-0.5 text-[10px] font-mono text-signal-orange border border-signal-orange/20">
+                            ↵
+                          </span>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div
           aria-label="Search input container"
           className={cn(
@@ -173,7 +430,7 @@ export default function AI_Input_Search({
             "border-[#262626] bg-[#111111] shadow-2xl backdrop-blur-md",
             isFocused && "border-signal-orange/60 ring-1 ring-signal-orange/30",
             isDragging && "border-signal-orange border-dashed bg-signal-orange/5",
-            disabled && "opacity-60 cursor-not-allowed"
+            disabled && "opacity-60 cursor-not-allowed",
           )}
           onClick={handleContainerClick}
           onPaste={handlePaste}
@@ -215,7 +472,9 @@ export default function AI_Input_Search({
                     </button>
                   </div>
                   <div className="mt-1 flex items-center justify-between px-1 text-[10px] font-mono text-warm-granite">
-                    <span className="truncate max-w-[70px]">{attachedFile?.name || "image.png"}</span>
+                    <span className="truncate max-w-[70px]">
+                      {attachedFile?.name || "image.png"}
+                    </span>
                     <span className="text-signal-orange">vision</span>
                   </div>
                 </div>
@@ -263,6 +522,34 @@ export default function AI_Input_Search({
               onFocus={handleFocus}
               onPaste={handlePaste}
               onKeyDown={(e) => {
+                if (showSuggestions && filteredCommands.length > 0) {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setSelectedSuggestionIdx((prev) => (prev + 1) % filteredCommands.length);
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setSelectedSuggestionIdx(
+                      (prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length,
+                    );
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setShowSuggestions(false);
+                    return;
+                  }
+                  if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                    e.preventDefault();
+                    const selected = filteredCommands[selectedSuggestionIdx];
+                    if (selected) {
+                      handleExecuteCommand(selected.cmd);
+                    }
+                    return;
+                  }
+                }
+
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   handleSubmit();
@@ -295,7 +582,7 @@ export default function AI_Input_Search({
                   "flex h-8 cursor-pointer items-center gap-2 rounded-full border px-2.5 py-1 transition-all text-xs font-mono",
                   showSearch
                     ? "border-signal-orange/60 bg-signal-orange/15 text-signal-orange shadow-sm"
-                    : "border-transparent bg-carbon-lift/40 text-warm-granite hover:text-bone hover:bg-carbon-lift"
+                    : "border-transparent bg-carbon-lift/40 text-warm-granite hover:text-bone hover:bg-carbon-lift",
                 )}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -326,7 +613,10 @@ export default function AI_Input_Search({
                     }}
                   >
                     <Globe
-                      className={cn("h-3.5 w-3.5", showSearch ? "text-signal-orange" : "text-inherit")}
+                      className={cn(
+                        "h-3.5 w-3.5",
+                        showSearch ? "text-signal-orange" : "text-inherit",
+                      )}
                     />
                   </motion.div>
                 </div>
@@ -355,7 +645,7 @@ export default function AI_Input_Search({
                   "rounded-lg p-2 transition-all flex items-center justify-center",
                   (value.trim() || attachedFile || imageDataUrl) && !disabled
                     ? "bg-signal-orange text-obsidian-canvas font-bold hover:brightness-110 shadow-md cursor-pointer"
-                    : "bg-carbon-lift/40 text-warm-granite/40 cursor-not-allowed"
+                    : "bg-carbon-lift/40 text-warm-granite/40 cursor-not-allowed",
                 )}
                 disabled={(!value.trim() && !attachedFile && !imageDataUrl) || disabled}
                 onClick={(e) => {
