@@ -40,7 +40,10 @@ COMMANDS: list[CommandItem] = [
     CommandItem("/net", "Toggle network monitor", takes_args=False),
     CommandItem("/new", "Start new session", takes_args=False),
     CommandItem("/sessions", "Browse past sessions", takes_args=False),
+    CommandItem("/logout", "Sign out and return to login screen", takes_args=False),
 ]
+
+
 
 
 class SuggestionBox(Widget):

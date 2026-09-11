@@ -28,7 +28,8 @@ from sovereignai.orchestrator.agent_loop import run_agent_turn
 from sovereignai.ui.widgets.chat_thread import ChatThread
 from sovereignai.ui.widgets.status_bar import StatusBar
 from sovereignai.ui.widgets.suggestion_box import SuggestionBox, CommandItem
-def _build_banner(mode: str = "local") -> str:
+
+def _build_banner(user_name: str | None = None, role: str | None = None, company: str | None = None) -> str:
     lines = [
         r"[bold #5FA8D3]██████╗  █████╗ ███████╗████████╗██╗ ██████╗  ███╗   ██╗[/]",
         r"[bold #4a90b8]██╔══██╗██╔══██╗██╔════╝╚══██╔══╝██║██╔═══██╗████╗  ██║[/]",
@@ -37,8 +38,11 @@ def _build_banner(mode: str = "local") -> str:
         r"[bold #2E5A7A]██████╔╝██║  ██║███████║   ██║   ██║╚██████╔╝██║ ╚████║[/]",
         r"[bold #2E5A7A]╚═════╝ ╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝[/]",
         "",
-        "[dim]            B A S T I O N   A I[/]",
+        "[dim]            B A S T I O N   S O V E R E I G N   A I[/]",
     ]
+    if user_name:
+        lines.append(f"[bold #5FA8D3]Operator:[/] {user_name}  ·  [bold #D9A441]{(role or 'admin').upper()}[/]  ·  [dim]{company or 'IOCL'}[/]")
+        lines.append("[dim]Type /logout to sign out · /help for commands[/dim]")
     return "\n".join(lines)
 
 @dataclass
@@ -117,11 +121,15 @@ class InfoPanel(Static):
     """
 
     def compose(self) -> ComposeResult:
+        yield Static("Operator", classes="ph")
+        yield Static("—", id="si-operator", classes="pv")
         yield Static("Session", classes="ph")
         yield Static("—", id="si-session-id", classes="pv")
         yield Static("Context", classes="ph")
         yield Static("0 tokens · 0% used", id="si-tokens", classes="pv")
         yield Static("$0.00 spent (fully local)", classes="dim-val")
+        yield Static("AI Requests", classes="ph")
+        yield Static("0 total (synced)", id="si-requests-count", classes="gpu-active")
         yield Static("Model", classes="ph")
         yield Static("AUTO", id="si-model", classes="pv")
         yield Static("GPU", classes="ph")
@@ -129,10 +137,14 @@ class InfoPanel(Static):
         yield Static("0% util · 0.0/0.0 GB", id="si-gpu-stat", classes="gpu-active")
 
     def refresh_all(self, session_id: str, tokens: int, tool_calls: int,
-                    model: str, external: int = 0, gpu_info: GPUInfo | None = None) -> None:
+                    model: str, external: int = 0, gpu_info: GPUInfo | None = None,
+                    operator_info: str = "", requests_count: int = 0) -> None:
+        if operator_info:
+            self._set("#si-operator", operator_info[:24])
         self._set("#si-session-id", session_id[:20] + ("…" if len(session_id) > 20 else ""))
         pct = min(int(tokens / 8192 * 100), 100)
         self._set("#si-tokens", f"{tokens:,} tokens · {pct}% used")
+        self._set("#si-requests-count", f"{requests_count:,} total (synced)")
         self._set("#si-model", model)
 
         # Real-time GPU stats
@@ -155,6 +167,7 @@ class InfoPanel(Static):
             self.query_one(selector, Static).update(text)
         except Exception:
             pass
+
 
 
 class ChatInput(Input):
@@ -271,6 +284,7 @@ class MainScreen(Screen):
         os.environ["SOVAI_WORKSPACE"] = str(workspace)
         self._model_override: str | None = None
         self._is_generating = False
+        self._ai_requests_count: int = 0
 
     def compose(self) -> ComposeResult:
         with Container(id="body"):
@@ -292,18 +306,33 @@ class MainScreen(Screen):
 
     async def on_mount(self) -> None:
         chat = self.query_one("#chat-thread", ChatThread)
-        await chat.add_system_message(_build_banner())
+        uname = getattr(self._session, "user_name", "") or getattr(self._session, "username", "")
+        urole = getattr(self._session, "user_role", "admin")
+        ucomp = getattr(self._session, "company_name", "Indian Oil Corporation Limited")
+        await chat.add_system_message(_build_banner(uname, urole, ucomp))
 
-        # Periodic UI refresh (GPU, session, tokens)
-        self.set_interval(1.0, self._periodic_refresh)
+        # Initial fetch of requests count from Supabase
+        uid = getattr(self._session, "user_id", None)
+        if uid:
+            from sovereignai.auth import get_ai_requests_count
+            try:
+                self._ai_requests_count = get_ai_requests_count(uid)
+            except Exception:
+                pass
+
+        # Periodic UI refresh (GPU, session, tokens, synced AI requests)
+        self.set_interval(1.5, self._periodic_refresh)
 
         # Update info panel
         info = self.query_one("#info-panel", InfoPanel)
+        op_label = f"{uname or 'Admin'} · {urole.upper()}"
         info.refresh_all(
             session_id=self._session.id,
             tokens=0, tool_calls=0,
             model=self._mode_badge(),
             gpu_info=query_gpu(),
+            operator_info=op_label,
+            requests_count=self._ai_requests_count,
         )
 
         # Focus input
@@ -312,17 +341,32 @@ class MainScreen(Screen):
     @work(thread=True)
     def _periodic_refresh(self) -> None:
         gpu_info = query_gpu()
-        self.app.call_from_thread(self._update_info_panel, gpu_info)
+        uid = getattr(self._session, "user_id", None)
+        req_count = self._ai_requests_count
+        if uid:
+            try:
+                from sovereignai.auth import get_ai_requests_count
+                req_count = get_ai_requests_count(uid)
+            except Exception:
+                pass
+        self.app.call_from_thread(self._update_info_panel, gpu_info, req_count)
 
-    def _update_info_panel(self, gpu_info: GPUInfo | None) -> None:
+    def _update_info_panel(self, gpu_info: GPUInfo | None, req_count: int | None = None) -> None:
         try:
+            if req_count is not None:
+                self._ai_requests_count = req_count
             info = self.query_one("#info-panel", InfoPanel)
+            uname = getattr(self._session, "user_name", "") or getattr(self._session, "username", "") or "Admin"
+            urole = getattr(self._session, "user_role", "admin").upper()
+            op_label = f"{uname} · {urole}"
             info.refresh_all(
                 session_id=self._session.id,
                 tokens=self._session.total_tokens,
                 tool_calls=self._session.tool_calls_made,
                 model=self._mode_badge(),
                 gpu_info=gpu_info,
+                operator_info=op_label,
+                requests_count=self._ai_requests_count,
             )
         except Exception:
             pass
@@ -405,6 +449,10 @@ class MainScreen(Screen):
 
         if head in ("/exit", "/quit"):
             self.app.exit()
+            return
+        elif head == "/logout":
+            if hasattr(self.app, "action_logout"):
+                await self.app.action_logout()
             return
         elif head == "/models":
             await self._open_model_palette()
@@ -529,10 +577,12 @@ class MainScreen(Screen):
                 "  /init         Initialize AGENTS.md configuration\n"
                 "  /new          Start a new session\n"
                 "  /sessions     Browse past sessions\n"
+                "  /logout       Sign out and return to login screen\n"
                 "  /exit         Exit the app\n"
                 "\n[dim]Keys: tab (complete) · esc (close/interrupt) · ctrl+p (palette) · ctrl+n (new)[/dim]",
                 "info",
             )
+
         else:
             await chat.add_system_message(f"Unknown: {cmd}  →  type /help for suggestions", "warning")
 
@@ -612,6 +662,17 @@ class MainScreen(Screen):
         chat.reset_turn_state()
         await chat.show_loading("Thinking…")
         thinking.update("⏳ Routing task…")
+
+        # Record AI request to Supabase to increment synced counter
+        user_id = getattr(self._session, "user_id", None)
+        company_id = getattr(self._session, "company_id", "796b5531-d535-42c9-b79b-bf88a3048318")
+        if user_id:
+            try:
+                from sovereignai.auth import record_ai_turn
+                self._ai_requests_count = record_ai_turn(user_id, company_id, user_text)
+                self._update_info_panel(query_gpu(), self._ai_requests_count)
+            except Exception:
+                pass
 
         # Queue for thread → async event communication
         queue: asyncio.Queue = asyncio.Queue()

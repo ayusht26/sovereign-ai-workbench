@@ -109,14 +109,23 @@ Run `bastion doctor` after any change until all checks pass.
 
 ---
 
-## 5. Launching the Agent TUI
+## 5. Launching the Agent TUI & Authentication
 
 ```powershell
 # Make sure venv is active, then:
 bastion
 ```
 
-The full-screen Terminal UI opens with the BASTION banner and chat input.
+### Identity & Access (Login Screen)
+On first launch (or after logging out), the **Identity & Access Management** screen appears:
+
+- Enter your **Username or Email** and **Password** (authenticated directly against Supabase).
+- Or click / press any of the **Quick-Fill Test Accounts**:
+  - `IOCL Admin`: `admin` / `admin123`
+  - `Tech Lead`: `tech_lead` / `tech123`
+  - `Finance Lead`: `finance_lead` / `finance123`
+  - `Support Lead`: `support_lead` / `support123`
+- Sessions persist automatically in `~/.bastion/auth_session.json` until `/logout` is typed.
 
 ### Optional: Set a specific workspace
 
@@ -136,16 +145,23 @@ bastion --workspace D:\data\projects\unit-4-inspection
 
 ```
 +----------------------------------------------+-------------------+
+|                                               | Operator          |
+|   Chat thread — messages, thought blocks,     | Admin · ADMIN     |
+|   tool calls, and responses stream here live  |                   |
 |                                               | Session           |
-|   Chat thread — messages, thought blocks,     | Context           |
-|   tool calls, and responses stream here live  | 0 tokens          |
-|                                               | $0.00             |
-|  [ Ask anything...                        ]   |                   |
-|                                               | Model             |
-|   AUTO  ·  📁 D:\projects\unit-4              | AUTO              |
 |                                               |                   |
-|  tab agents  ctrl+p commands  esc interrupt   | GPU               |
-|                                               | RTX 4060 Laptop   |
+|                                               | Context           |
+|                                               | 0 tokens · 0% used|
+|                                               | $0.00 spent       |
+|                                               |                   |
+|                                               | AI Requests       |
+|                                               | 39 total (synced) |
+|                                               |                   |
+|  [ Ask anything...                        ]   | Model             |
+|                                               | AUTO              |
+|   AUTO  ·  📁 D:\projects\unit-4              |                   |
+|                                               | GPU               |
+|  tab complete  ctrl+p commands  esc interrupt | RTX 4060 Laptop   |
 +----------------------------------------------+-------------------+
 ```
 
@@ -164,11 +180,14 @@ bastion --workspace D:\data\projects\unit-4-inspection
 |---------|-------------|
 | `/models` | Open model selection palette (`AUTO`, `Qwen3.5-9B`, `Qwen3-Coder-Next`, `Qwen3-VL-32B`) |
 | `/auto` | Switch back to AUTO routing |
+| `/agents` | Switch active role (`admin`, `tech`, `finance`, `support`) |
+| `/logout` | Sign out from Bastion and return to the login screen |
 | `/new` | Start a new session |
 | `/sessions` | Browse past sessions |
 | `/kb status` | Show knowledge base statistics (Supabase) |
 | `/cwd <path>` | Change the workspace directory |
 | `/help` | Show all available commands |
+
 
 ---
 
