@@ -25,24 +25,17 @@ from textual.widgets import Input, Static, Label, Footer
 
 from sovereignai.ui.widgets.chat_thread import ChatThread
 from sovereignai.ui.widgets.status_bar import StatusBar
-def _build_banner(mode: str) -> str:
+def _build_banner(mode: str = "local") -> str:
     lines = [
-        r"[bold #5FA8D3]██████╗  █████╗ ███████╗████████╗██╗ █████╗ ███╗   ██╗[/]",
-        r"[bold #4a90b8]██╔══██╗██╔══██╗██╔════╝╚══██╔══╝██║██╔══██╗████╗  ██║[/]",
-        r"[bold #3d7da0]██████╔╝███████║███████╗   ██║   ██║███████║██╔██╗ ██║[/]",
-        r"[bold #306988]██╔══██╗██╔══██║╚════██║   ██║   ██║██╔══██║██║╚██╗██║[/]",
-        r"[bold #2E5A7A]██████╔╝██║  ██║███████║   ██║   ██║██║  ██║██║ ╚████║[/]",
-        r"[bold #2E5A7A]╚═════╝ ╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝[/]",
+        r"[bold #5FA8D3]██████╗  █████╗ ███████╗████████╗██╗ ██████╗  ███╗   ██╗[/]",
+        r"[bold #4a90b8]██╔══██╗██╔══██╗██╔════╝╚══██╔══╝██║██╔═══██╗████╗  ██║[/]",
+        r"[bold #3d7da0]██████╔╝███████║███████╗   ██║   ██║██║   ██║██╔██╗ ██║[/]",
+        r"[bold #306988]██╔══██╗██╔══██║╚════██║   ██║   ██║██║   ██║██║╚██╗██║[/]",
+        r"[bold #2E5A7A]██████╔╝██║  ██║███████║   ██║   ██║╚██████╔╝██║ ╚████║[/]",
+        r"[bold #2E5A7A]╚═════╝ ╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝[/]",
         "",
-        "[dim]            B A S T I A N   A I[/]",
+        "[dim]            B A S T I O N   A I[/]",
     ]
-    badge = {
-        "local":  "🔒 LOCAL / AIR-GAPPED",
-        "api":    "🌐 API MODE",
-        "breach": "🔓 UNEXPECTED EGRESS DETECTED",
-    }[mode]
-    color = "#D9A441" if mode != "breach" else "#D94141"
-    lines.append(f"[bold {color}]   Local models. Local data. Zero external calls unless in API mode.   {badge}[/]")
     return "\n".join(lines)
 
 @dataclass
@@ -115,8 +108,6 @@ class InfoPanel(Static):
         margin-bottom: 0;
         padding-left: 1;
     }
-    InfoPanel .net-ok     { color: #44bb88; text-style: bold; }
-    InfoPanel .net-alert  { color: #cc4444; text-style: bold; }
     InfoPanel .dim-val    { color: #445566; padding-left: 1; }
     InfoPanel .gpu-active { color: #44bb88; text-style: bold; padding-left: 1; }
     InfoPanel .gpu-high   { color: #D9A441; text-style: bold; padding-left: 1; }
@@ -133,24 +124,13 @@ class InfoPanel(Static):
         yield Static("GPU", classes="ph")
         yield Static("Detecting…", id="si-gpu-name", classes="pv")
         yield Static("0% util · 0.0/0.0 GB", id="si-gpu-stat", classes="gpu-active")
-        yield Static("Network", classes="ph")
-        yield Static("🔒 0 external calls", id="si-net", classes="net-ok")
-        yield Static("(0 tool calls, 0 egress)", id="si-net-detail", classes="dim-val")
 
     def refresh_all(self, session_id: str, tokens: int, tool_calls: int,
-                    model: str, external: int, gpu_info: GPUInfo | None = None) -> None:
+                    model: str, external: int = 0, gpu_info: GPUInfo | None = None) -> None:
         self._set("#si-session-id", session_id[:20] + ("…" if len(session_id) > 20 else ""))
         pct = min(int(tokens / 8192 * 100), 100)
         self._set("#si-tokens", f"{tokens:,} tokens · {pct}% used")
         self._set("#si-model", model)
-        self._set("#si-net-detail", f"({tool_calls} tool calls, 0 egress)")
-        net_w = self.query_one("#si-net", Static)
-        if external == 0:
-            net_w.set_classes("net-ok")
-            net_w.update("🔒 0 external calls")
-        else:
-            net_w.set_classes("net-alert")
-            net_w.update(f"⚠ {external} EXTERNAL CALL{'S' if external != 1 else ''}")
 
         # Real-time GPU stats
         if gpu_info:
@@ -262,18 +242,10 @@ class MainScreen(Screen):
         yield StatusBar(id="status-bar")
 
     async def on_mount(self) -> None:
-        from sovereignai.config import get_config
         chat = self.query_one("#chat-thread", ChatThread)
-        mode = "api" if get_config().provider_mode == "api" else "local"
-        await chat.add_system_message(_build_banner(mode))
-        ...
-        # Start network guard
-        from sovereignai.net_guard.monitor import get_monitor
-        mon = get_monitor()
-        mon.add_alert_callback(self._on_net_alert)
-        mon.start()
+        await chat.add_system_message(_build_banner())
 
-        # Periodic UI refresh (GPU, session, tokens, network)
+        # Periodic UI refresh (GPU, session, tokens)
         self.set_interval(1.0, self._periodic_refresh)
 
         # Update info panel
@@ -282,22 +254,13 @@ class MainScreen(Screen):
             session_id=self._session.id,
             tokens=0, tool_calls=0,
             model=self._mode_badge(),
-            external=0,
             gpu_info=query_gpu(),
         )
 
         # Focus input
         self.query_one("#input-box", Input).focus()
 
-    def _on_net_alert(self, count: int) -> None:
-        self.app.notify(
-            f"⚠ Network: {count} external connection(s) detected!",
-            severity="error", timeout=8,
-        )
-
     def _periodic_refresh(self) -> None:
-        from sovereignai.net_guard.monitor import get_monitor
-        state = get_monitor().get_state()
         gpu_info = query_gpu()
         try:
             info = self.query_one("#info-panel", InfoPanel)
@@ -306,7 +269,6 @@ class MainScreen(Screen):
                 tokens=self._session.total_tokens,
                 tool_calls=self._session.tool_calls_made,
                 model=self._mode_badge(),
-                external=state.external_attempts,
                 gpu_info=gpu_info,
             )
         except Exception:

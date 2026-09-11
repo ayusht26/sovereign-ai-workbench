@@ -287,11 +287,13 @@ class ChatThread(VerticalScroll):
         await self.remove_loading()
         if self._live is None:
             return
-        text = self._live.get_text()
-        duration_ms = int((time.time() - self._step_start) * 1000)
-        thought = ThoughtBlock(duration_ms=duration_ms, text=text)
+        text = self._live.get_text().strip()
         await self._live.remove()
         self._live = None
+        if not text:
+            return
+        duration_ms = int((time.time() - self._step_start) * 1000)
+        thought = ThoughtBlock(duration_ms=duration_ms, text=text)
         await self.mount(thought)
         self._thought = thought
         self.scroll_end(animate=False)
@@ -301,9 +303,11 @@ class ChatThread(VerticalScroll):
         await self.remove_loading()
         if self._live is None:
             return
-        text = self._live.get_text()
+        text = self._live.get_text().strip()
         await self._live.remove()
         self._live = None
+        if not text:
+            return
         msg = AssistantMessage(text)
         await self.mount(msg)
         self.scroll_end(animate=False)

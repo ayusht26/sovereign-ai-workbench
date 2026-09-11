@@ -84,10 +84,10 @@ class ModelPalette(ModalScreen):
         cfg = get_config()
 
         rows = [
-            ("AUTO",                    "Auto-detect the right model per task",   True),
-            (cfg.model_for("general"),  "General reasoning, drafting, summaries", False),
-            (cfg.model_for("coding"),   "Coding, debugging, running code",         False),
-            (cfg.model_for("vision"),   "Images, scanned docs, drawings, OCR",     False),
+            ("AUTO",              "Auto-detect the right model per task",    True),
+            ("Qwen3.5-9B",        "General reasoning, drafting, summaries",  False),
+            ("Qwen3-Coder-Next",  "Coding, debugging, running code",         False),
+            ("Qwen3-VL-32B",      "Images, scanned docs, drawings, OCR",     False),
         ]
 
         # Build all ListItems with clean ModelListItem objects (no invalid DOM ids)
@@ -96,13 +96,13 @@ class ModelPalette(ModalScreen):
             is_selected = (model_tag == self._current) or (self._current == "AUTO" and is_auto)
             marker = "●" if is_selected else " "
             display = "AUTO" if is_auto else model_tag
-            label_text = f"{marker} {display:<24} {desc}"
+            label_text = f"{marker} {display:<20} {desc}"
             list_items.append(ModelListItem(label_text, value=model_tag))
 
         # Separator + commands
         list_items.append(ListItem(Label("─" * 58), disabled=True))
         list_items.append(ModelListItem("  /kb    Manage local knowledge base", value="/kb"))
-        list_items.append(ModelListItem("  /net   Open network monitor",         value="/net"))
+        list_items.append(ModelListItem("  /cwd   Change workspace directory",  value="/cwd"))
 
         with Vertical():
             yield Static("  Model Selection", id="title")

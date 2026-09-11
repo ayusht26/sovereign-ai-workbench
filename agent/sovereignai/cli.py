@@ -1,17 +1,17 @@
 """
-cli.py — Typer entrypoint for `sovai`.
+cli.py — Typer entrypoint for `bastion`.
 
-`sovai`                   → launches the Textual TUI
-`sovai doctor`            → checks all dependencies, prints fix commands
-`sovai config edit`       → opens ~/.sovereignai/config.yaml in $EDITOR
-`sovai models list`       → lists pulled Ollama models
-`sovai models pull`       → pulls the four default models
-`sovai kb add <path>`     → ingest a folder/file into the local knowledge base
-`sovai kb status`         → show KB stats (doc count, chunk count, disk size)
-`sovai kb watch <path>`   → watch a folder and re-ingest on changes
-`sovai audit export`      → export a session audit to DOCX
-`sovai run`               → alias for the default launch (TUI)
-`sovai version`           → print version and exit
+`bastion`                   → launches the Textual TUI
+`bastion doctor`            → checks all dependencies, prints fix commands
+`bastion config edit`       → opens ~/.bastion/config.yaml in $EDITOR
+`bastion models list`       → lists configured models with display names
+`bastion models pull`       → (no-op for Bastion — models are API-hosted)
+`bastion kb add <path>`     → points to Supabase admin panel for ingestion
+`bastion kb status`         → show Supabase KB stats (doc count, chunk count)
+`bastion kb watch <path>`   → (not applicable — KB is managed via web admin panel)
+`bastion audit export`      → export a session audit to DOCX
+`bastion run`               → alias for the default launch (TUI)
+`bastion version`           → print version and exit
 """
 from __future__ import annotations
 
@@ -23,10 +23,17 @@ import typer
 
 from dotenv import load_dotenv
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 load_dotenv()
 app = typer.Typer(
-    name="sovai",
-    help="SovereignAI — Local models. Local data. Zero external calls.",
+    name="bastion",
+    help="Bastion — Sovereign AI agent. OpenAI-powered, Supabase-backed RAG.",
     add_completion=False,
     no_args_is_help=False,
     invoke_without_command=True,
@@ -52,7 +59,7 @@ def main_callback(
     """Launch the SovereignAI TUI (default action when no subcommand is given)."""
     if version:
         from sovereignai import __version__
-        typer.echo(f"SovereignAI v{__version__}")
+        typer.echo(f"Bastion v{__version__}")
         raise typer.Exit()
     if ctx.invoked_subcommand is None:
         _launch_tui()
@@ -97,62 +104,34 @@ def version_cmd() -> None:
     from sovereignai import __version__
     from sovereignai.banner import get_banner_str
     typer.echo(get_banner_str())
-    typer.echo(f"\nVersion: {__version__}")
+    typer.echo(f"\nBastion v{__version__}")
 
 
 # ── `sovai models` ────────────────────────────────────────────────────────
 
 @models_app.command("list")
 def models_list() -> None:
-    """List all pulled Ollama models."""
+    """List configured models and their sovereign display names."""
     from sovereignai.config import get_config
-    import ollama
     cfg = get_config()
-    client = ollama.Client(host=cfg.ollama_host)
-    try:
-        result = client.list()
-        typer.echo(f"\n{'Model':<40}  {'Size':>10}  {'Modified'}")
-        typer.echo("─" * 65)
-        for m in result.models:
-            size_gb = (m.size or 0) / 1e9
-            modified = str(m.modified_at)[:10] if m.modified_at else "unknown"
-            typer.echo(f"  {m.model:<38}  {size_gb:>9.2f}G  {modified}")
-        typer.echo()
-    except Exception as e:
-        typer.echo(f"❌  Cannot connect to Ollama at {cfg.ollama_host}: {e}", err=True)
-        raise typer.Exit(1)
+    categories = ["general", "coding", "vision", "document_qa", "spreadsheet", "embedding"]
+    typer.echo(f"\n{'Category':<15}  {'Display Name (TUI)':<22}  {'API Model'}")
+    typer.echo("-" * 65)
+    for cat in categories:
+        node = cfg._raw.get("models", {}).get(cat, {})
+        api_model = node.get("api") or node.get("model", "")
+        display = node.get("display_name", api_model)
+        typer.echo(f"  {cat:<13}  {display:<22}  {api_model}")
+    typer.echo(f"\n  Provider: OpenAI API ({cfg.provider_base_url})\n")
 
 
 @models_app.command("pull")
 def models_pull() -> None:
-    """Pull all four default models required by SovereignAI."""
-    from sovereignai.config import get_config
-    import ollama
-    cfg = get_config()
-    client = ollama.Client(host=cfg.ollama_host)
-
-    models_to_pull = [
-        (cfg.router_model, "router — always-resident classifier"),
-        (cfg.model_for("general"),  "general reasoning / drafting / summaries"),
-        (cfg.model_for("coding"),   "coding / debugging / sandbox"),
-        (cfg.model_for("vision"),   "vision / OCR / scanned docs"),
-        (cfg.embedding_model,       "RAG embeddings"),
-    ]
-
-    typer.echo("\n📦  Pulling models (this may take a while — ~14GB total):\n")
-    for tag, desc in models_to_pull:
-        typer.echo(f"  ⬇  {tag}  ({desc})")
-        try:
-            for progress in client.pull(tag, stream=True):
-                status = getattr(progress, "status", "")
-                if "pulling" in status.lower() or "success" in status.lower():
-                    typer.echo(f"     {status}", nl=False)
-                    typer.echo("\r", nl=False)
-            typer.echo(f"     ✅  {tag} ready                    ")
-        except Exception as e:
-            typer.echo(f"     ❌  Failed: {e}", err=True)
-
-    typer.echo("\n✅  Done. Run `sovai doctor` to verify everything.\n")
+    """Bastion uses the OpenAI API — no models to pull locally."""
+    typer.echo(
+        "\nℹ️  Bastion runs all models via the OpenAI API. No local download needed.\n"
+        "    Make sure OPENAI_API_KEY is set in agent/.env and you're good to go.\n"
+    )
 
 
 # ── `sovai config` ────────────────────────────────────────────────────────
@@ -180,15 +159,12 @@ def kb_add(
     path: str = typer.Argument(..., help="File or directory to ingest."),
     recursive: bool = typer.Option(True, "--recursive/--no-recursive", help="Recurse into subdirectories."),
 ) -> None:
-    """Ingest a file or folder into the local knowledge base."""
-    from sovereignai.knowledge_base.ingest import ingest_path
-    p = Path(path).resolve()
-    if not p.exists():
-        typer.echo(f"❌  Path not found: {p}", err=True)
-        raise typer.Exit(1)
-    typer.echo(f"\n📚  Ingesting {p} …\n")
-    stats = ingest_path(p, recursive=recursive, verbose=True)
-    typer.echo(f"\n✅  Done — {stats['docs']} docs, {stats['chunks']} chunks ingested.\n")
+    """Upload documents to the Bastion knowledge base (via web admin panel)."""
+    typer.echo(
+        f"\nℹ️  Bastion's knowledge base is hosted in Supabase and managed via the web admin panel.\n"
+        f"    To ingest documents, go to the Bastion web app → Admin → Documents → Upload.\n"
+        f"    The agent will automatically search all ingested documents when you ask questions.\n"
+    )
 
 
 @kb_app.command("status")
@@ -208,14 +184,11 @@ def kb_status() -> None:
 def kb_watch(
     path: str = typer.Argument(..., help="Directory to watch for changes."),
 ) -> None:
-    """Watch a directory and re-ingest files when they change."""
-    from sovereignai.knowledge_base.ingest import watch_path
-    p = Path(path).resolve()
-    if not p.is_dir():
-        typer.echo(f"❌  Not a directory: {p}", err=True)
-        raise typer.Exit(1)
-    typer.echo(f"\n👁  Watching {p} for changes. Press Ctrl+C to stop.\n")
-    watch_path(p)
+    """KB watch mode is not available — use the web admin panel to manage documents."""
+    typer.echo(
+        "\nℹ️  Bastion's knowledge base is managed via the Supabase web admin panel.\n"
+        "    KB watch mode is not supported in this version.\n"
+    )
 
 
 # ── `sovai audit` ─────────────────────────────────────────────────────────

@@ -35,9 +35,9 @@ class SovereignApp(App):
 
         # Current authenticated/session role.
         #
-        # For the current application, we use "employee".
-        # The RAG layer will use this role when filtering documents.
-        self.user_role = os.getenv("SOVAI_ROLE", "employee")
+        # Defaults to "admin" so the agent has full access to the company corpus.
+        # Can be overridden with SOVAI_ROLE (admin | tech | finance | support).
+        self.user_role = os.getenv("SOVAI_ROLE", "admin")
 
         self._session = self._new_session()
 

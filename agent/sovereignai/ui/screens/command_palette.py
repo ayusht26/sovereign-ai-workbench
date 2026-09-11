@@ -17,7 +17,6 @@ _COMMANDS = [
     ("/kb add",         "Add a path to the knowledge base"),
     ("/kb status",      "Show knowledge base statistics"),
     ("/kb watch",       "Watch a directory for changes"),
-    ("/net",            "Open the network monitor"),
     ("/cwd",            "Change the workspace directory"),
     ("/attach",         "Copy a file into the workspace so the agent can reference it"),
     ("/sandbox status", "Check Docker sandbox status"),

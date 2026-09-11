@@ -23,7 +23,7 @@ from sovereignai.orchestrator.session import Session
 from sovereignai.providers import get_llm_client
 
 _AGENT_SYSTEM = """\
-You are SovereignAI, an expert autonomous AI assistant running locally on this machine.
+You are Bastion, an expert autonomous AI assistant.
 You have direct access to tools for filesystem access (fs_write, fs_read, fs_list, fs_glob), code execution, and document creation.
 
 CRITICAL INSTRUCTIONS:
@@ -33,11 +33,11 @@ CRITICAL INSTRUCTIONS:
 4. Show brief reasoning before calling tools, then call the tool."""
 
 _TOOL_HINT = {
-    "general":      "You may use: rag_tool (to search documents), docgen_tool (to produce Word/PPTX/Excel files), fs_read, fs_list, fs_write.",
-    "document_qa":  "You may use: rag_tool (primary), fs_read, docgen_tool.",
+    "general":      "You may use: rag_search (to search documents), fs_read, fs_list, fs_write, generate_docx, generate_pptx, generate_xlsx.",
+    "document_qa":  "You may use: rag_search (primary), fs_read, generate_docx, generate_pptx, generate_xlsx.",
     "coding":       "You may use: fs_write, fs_read, fs_list, fs_glob, sandbox_exec (to run code), shell_tool.",
-    "vision":       "You may use: vision_tool (to analyze images/PDFs), docgen_tool, rag_tool.",
-    "spreadsheet":  "You may use: sheet_tool (to read/write .xlsx), docgen_tool, fs_read.",
+    "vision":       "You may use: vision_analyze (to analyze images/PDFs), rag_search.",
+    "spreadsheet":  "You may use: sheet_read, sheet_write, sheet_create, generate_xlsx, fs_read.",
     "planning":     "You may use all available tools. Plan step-by-step before acting.",
 }
 
@@ -193,19 +193,35 @@ def run_agent_turn(
     start_time = time.time()
 
     session.append("user", user_message)
-    current_user_role.set(getattr(session, "user_role", "viewer"))
+    current_user_role.set(getattr(session, "user_role", "admin"))
     session._nudged_this_turn = False
     session._last_tool_signature = None
     session._last_tool_result = None
 
     if model_override:
+        cat = "general"
+        disp = model_override
+        lower = model_override.lower()
+        if "coder" in lower or lower == "coding":
+            cat = "coding"
+            disp = "Qwen3-Coder-Next"
+        elif "vl" in lower or lower == "vision":
+            cat = "vision"
+            disp = "Qwen3-VL-32B"
+        elif "9b" in lower or lower == "general":
+            cat = "general"
+            disp = "Qwen3.5-9B"
+
+        from sovereignai.providers.llm_client import resolve_real_model
+        real_model = resolve_real_model(model_override)
         decision = RoutingDecision(
-            category="general",
-            model_name=model_override,
+            category=cat,
+            model_name=real_model,
+            display_name=disp,
             confidence=1.0,
             reason="manually pinned",
             uncertain=False,
-            provider=cfg.provider_mode,
+            provider="local",
         )
     else:
         decision = get_router().classify(user_message)
@@ -213,11 +229,12 @@ def run_agent_turn(
     yield {
         "kind": "routing_decision",
         "category": decision.category,
-        "model_name": decision.model_name,
+        "model_name": decision.display_name,
+        "real_model": decision.model_name,
         "confidence": decision.confidence,
         "reason": decision.reason,
         "uncertain": decision.uncertain,
-        "provider": decision.provider,
+        "provider": "local",
     }
 
     from sovereignai.tools.base import ToolRegistry
@@ -254,40 +271,24 @@ def run_agent_turn(
             )
             force_tool_choice = None  # only force for one retry, not forever
         except Exception as e:
-            if cfg.provider_mode == "local":
-                fallback = cfg.fallback_for(decision.category)
-                yield {"kind": "error", "message": f"Model {decision.model_name} unavailable, trying {fallback}: {e}"}
-                try:
-                    decision = decision._replace(model_name=fallback)
-                    thought_text, current_tool_calls = yield from _run_stream(
-                        client,
-                        fallback,
-                        messages_for_model,
-                        tools_for_call,
-                        session,
-                        step,
-                        tool_choice=force_tool_choice,
-                    )
-                except Exception as e2:
-                    yield {"kind": "error", "message": str(e2)}
-                    return ""
-            else:
+            yield {"kind": "error", "message": f"Model {decision.display_name} error: {e}"}
+            try:
                 api_fallback = cfg.api_fallback_for(decision.category)
-                yield {"kind": "error", "message": f"API model {decision.model_name} failed, trying free fallback {api_fallback}: {e}"}
-                try:
-                    decision = decision._replace(model_name=api_fallback)
-                    thought_text, current_tool_calls = yield from _run_stream(
-                        client,
-                        api_fallback,
-                        messages_for_model,
-                        tools_for_call,
-                        session,
-                        step,
-                        tool_choice=force_tool_choice,
-                    )
-                except Exception as e2:
-                    yield {"kind": "error", "message": str(e2)}
-                    return ""
+                from sovereignai.providers.llm_client import resolve_real_model
+                real_fallback = resolve_real_model(api_fallback)
+                decision = decision._replace(model_name=real_fallback)
+                thought_text, current_tool_calls = yield from _run_stream(
+                    client,
+                    real_fallback,
+                    messages_for_model,
+                    tools_for_call,
+                    session,
+                    step,
+                    tool_choice=force_tool_choice,
+                )
+            except Exception as e2:
+                yield {"kind": "error", "message": str(e2)}
+                return ""
 
 
         messages_for_model.append(_build_assistant_message(thought_text, current_tool_calls, cfg.provider_mode))

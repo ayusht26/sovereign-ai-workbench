@@ -20,10 +20,12 @@ class ThoughtBlock(Widget):
     ThoughtBlock {
         margin: 0 0 0 2;
         padding: 0;
+        height: auto;
     }
     ThoughtBlock Collapsible {
         border: none;
         padding: 0;
+        height: auto;
     }
     ThoughtBlock .thought-text {
         color: #667788;

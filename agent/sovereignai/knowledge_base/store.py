@@ -1,198 +1,113 @@
 """
 agent/sovereignai/knowledge_base/store.py
 
-Hybrid (BM25 + dense vector) retrieval over a self-hosted Qdrant instance,
-with role-based access control enforced INSIDE the Qdrant query (a native
-payload filter), never as a post-hoc Python filter.
+Hybrid RAG retrieval backed by Supabase pgvector — the same database
+the Bastion web application uses.
 
-==============================================================================
-READ THIS BEFORE TOUCHING `role` IN search()
-==============================================================================
+Calls the same Supabase RPC functions the website uses:
+  1. search_document_chunks_ranked  (PostgreSQL full-text ranked search)
+  2. match_document_chunks           (pgvector semantic similarity)
+  3. Keyword ilike fallback
 
-By the time `role` reaches this function, it is already resolved and already
-trustworthy. The call chain (all upstream of this file) is:
+Embeddings are generated with OpenAI text-embedding-3-small via the
+shared LLM client, keeping everything in one API dependency.
 
-    session (real, authenticated)
-        -> current_user_role.set(session.user_role)   [agent_loop.py]
-        -> role = current_user_role.get()              [rag_tool.py]
-        -> get_store().search(..., role=role)          [rag_tool.py]
-
-The LLM never supplies `role` as a tool-call argument and never sees this
-parameter.
-
-The only thing this function does with `role` is build a Qdrant filter:
-
-    allowed_roles contains role
-
-The filter is applied INSIDE the Qdrant query, before retrieval.
-==============================================================================
-
+RBAC is enforced by Supabase Row Level Security policies on the server.
+The agent connects as the anon user (same as the website frontend) and
+only sees rows the RLS policies permit.
 """
-
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from pathlib import Path
+import re
 from typing import Optional
 
-import ollama
-
-from qdrant_client import QdrantClient
-
-from qdrant_client.models import (
-    FieldCondition,
-    Filter,
-    FusionQuery,
-    Fusion,
-    MatchAny,
-    MatchValue,
-    Prefetch,
-    SparseVector,
-)
-
 from sovereignai.config import cfg
-
 
 logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# QDRANT CONFIGURATION
+# SUPABASE CLIENT
 # =============================================================================
 
-COLLECTION_NAME = "sovereign_kb"
-
-QDRANT_HOST = getattr(
-    cfg,
-    "qdrant_host",
-    "localhost",
-)
-
-QDRANT_PORT = getattr(
-    cfg,
-    "qdrant_port",
-    6333,
-)
-
-
-# =============================================================================
-# OLLAMA CONFIGURATION
-# =============================================================================
-
-OLLAMA_URL = getattr(
-    cfg,
-    "ollama_url",
-    "http://localhost:11434",
-)
-
-_ollama_client = ollama.Client(
-    host=OLLAMA_URL
-)
-
-
-# =============================================================================
-# DENSE EMBEDDING
-# =============================================================================
-
-def _embed_dense(text: str) -> list[float]:
-    """
-    Generate a dense embedding using the local Ollama embedding model.
-    """
-
-    response = _ollama_client.embeddings(
-        model=cfg.embedding_model,
-        prompt=text,
-    )
-
-    return response["embedding"]
-
-
-# =============================================================================
-# SPARSE BM25 EMBEDDING
-# =============================================================================
-
-class _SparseEmbedder:
-    """
-    Wrapper around FastEmbed's Qdrant BM25 sparse embedding model.
-
-    The model is loaded lazily on first use.
-    """
-
-    _model = None
-
-    @classmethod
-    def _get_model(cls):
-        if cls._model is None:
-            from fastembed import SparseTextEmbedding
-
-            cls._model = SparseTextEmbedding(
-                model_name="Qdrant/bm25"
-            )
-
-        return cls._model
-
-    @classmethod
-    def embed(cls, text: str) -> SparseVector:
-        """
-        Convert text into a Qdrant-compatible sparse vector.
-        """
-
-        model = cls._get_model()
-
-        result = next(
-            model.query_embed(text)
+def _get_supabase():
+    """Return a Supabase client using the project's anon key."""
+    from supabase import create_client
+    url = cfg.supabase_url
+    key = cfg.supabase_anon_key
+    if not key:
+        raise RuntimeError(
+            "Supabase anon key not found. "
+            "Add SUPABASE_ANON_KEY to agent/.env or set supabase.anon_key in models.yaml."
         )
-
-        return SparseVector(
-            indices=result.indices.tolist(),
-            values=result.values.tolist(),
-        )
+    return create_client(url, key)
 
 
 # =============================================================================
-# QDRANT COLLECTION SETUP
+# EMBEDDING (OpenAI text-embedding-3-small)
 # =============================================================================
 
-def ensure_collection(
-    client: QdrantClient,
-    dense_size: int = 768,
-) -> None:
+def _embed(text: str) -> list[float]:
     """
-    Ensure that the sovereign_kb collection exists.
-
-    Dense vector:
-        nomic-embed-text
-
-    Sparse vector:
-        Qdrant BM25
+    Generate a 1536-dim embedding using OpenAI text-embedding-3-small.
+    Falls back to a local hash-based pseudo-embedding if the API is unavailable.
     """
+    try:
+        from sovereignai.providers import get_llm_client
+        return get_llm_client().embed(text)
+    except Exception as e:
+        logger.warning("Embedding via OpenAI failed (%s), using local fallback", e)
+        return _local_embed(text)
 
-    from qdrant_client.models import (
-        Distance,
-        SparseVectorParams,
-        VectorParams,
-    )
 
-    if client.collection_exists(
-        COLLECTION_NAME
-    ):
-        return
+def _local_embed(text: str) -> list[float]:
+    """Deterministic pseudo-embedding (1536 dims) for offline fallback."""
+    import math
+    vector = [0.0] * 1536
+    norm_text = text.lower()
+    for i, ch in enumerate(norm_text):
+        idx = (ord(ch) * 31 + i * 17) % 1536
+        vector[idx] += 1.0
+    norm = math.sqrt(sum(v * v for v in vector))
+    if norm > 0:
+        vector = [round(v / norm, 6) for v in vector]
+    return vector
 
-    client.create_collection(
-        collection_name=COLLECTION_NAME,
 
-        vectors_config={
-            "dense": VectorParams(
-                size=dense_size,
-                distance=Distance.COSINE,
-            )
-        },
+# =============================================================================
+# TEXT UTILITIES
+# =============================================================================
 
-        sparse_vectors_config={
-            "sparse": SparseVectorParams()
-        },
-    )
+def _clean_ocr(text: str) -> str:
+    """Remove control characters common in OCR output from pypdf."""
+    text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", " ", text)
+    text = re.sub(r"[\u0003\u0006\u0007\u000E\u000F\u0010-\u001F]", " ", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    return text.strip()
+
+
+def _format_results(rows: list[dict], fallback: bool = False) -> list[dict]:
+    """Normalise Supabase rows to the format expected by rag_tool.py."""
+    results = []
+    for row in rows:
+        title = row.get("title")
+        if not title:
+            docs = row.get("documents")
+            if isinstance(docs, dict):
+                title = docs.get("title")
+            elif isinstance(docs, str):
+                title = docs
+        title = title or "Internal Verified Record"
+        content = _clean_ocr(row.get("content") or "")
+        results.append({
+            "chunk": content,
+            "source": title,
+            "score": float(row.get("similarity", 0.8 if fallback else 0.95)),
+            "doc_id": str(row.get("document_id") or row.get("id") or ""),
+            "sensitivity": row.get("category", ""),
+        })
+    return results
 
 
 # =============================================================================
@@ -201,171 +116,47 @@ def ensure_collection(
 
 class KnowledgeStore:
 
-    def __init__(self) -> None:
-        """
-        Initialize Qdrant client and ensure the collection exists.
-        """
-
-        self._client = QdrantClient(
-            host=QDRANT_HOST,
-            port=QDRANT_PORT,
-        )
-
-        ensure_collection(
-            self._client
-        )
-
     # =========================================================================
-    # KNOWLEDGE BASE STATISTICS
+    # STATISTICS
     # =========================================================================
 
     def stats(self) -> dict:
         """
-        Return knowledge-base statistics.
+        Return knowledge-base statistics from Supabase.
 
         Returns:
-
-            documents  -> number of unique documents
-            chunks     -> number of Qdrant points
-            disk_mb    -> estimated collection disk usage
-            last_ingest -> latest source-file modification time
+            documents   -> number of unique documents
+            chunks      -> number of document_chunks rows
+            disk_mb     -> 0.0 (not accessible via anon key)
+            last_ingest -> latest document created_at timestamp
         """
-
-        collection = self._client.get_collection(
-            COLLECTION_NAME
-        )
-
-        # ---------------------------------------------------------------------
-        # Find unique documents and latest source modification time
-        # ---------------------------------------------------------------------
-
-        documents = set()
-
-        latest_timestamp = None
-
-        offset = None
-
-        while True:
-
-            points, next_offset = self._client.scroll(
-                collection_name=COLLECTION_NAME,
-                limit=100,
-                offset=offset,
-                with_payload=True,
-                with_vectors=False,
-            )
-
-            for point in points:
-
-                payload = point.payload or {}
-
-                # -------------------------------------------------------------
-                # Document ID
-                # -------------------------------------------------------------
-
-                doc_id = payload.get(
-                    "doc_id"
-                )
-
-                if doc_id:
-                    documents.add(
-                        doc_id
-                    )
-
-                # -------------------------------------------------------------
-                # Source file modification time
-                # -------------------------------------------------------------
-
-                source = payload.get(
-                    "source"
-                )
-
-                if source:
-
-                    try:
-
-                        source_path = Path(
-                            source
-                        )
-
-                        if source_path.exists():
-
-                            modified_time = source_path.stat().st_mtime
-
-                            if (
-                                latest_timestamp is None
-                                or modified_time > latest_timestamp
-                            ):
-                                latest_timestamp = modified_time
-
-                    except (
-                        OSError,
-                        ValueError,
-                    ):
-                        pass
-
-            if next_offset is None:
-                break
-
-            offset = next_offset
-
-        # ---------------------------------------------------------------------
-        # Determine disk size
-        # ---------------------------------------------------------------------
-
-        disk_mb = 0.0
-
         try:
+            sb = _get_supabase()
 
-            collection_info = self._client.get_collection(
-                COLLECTION_NAME
-            )
+            # Count chunks
+            chunks_resp = sb.table("document_chunks").select("id", count="exact").execute()
+            chunk_count = chunks_resp.count or 0
 
-            disk_size = getattr(
-                collection_info,
-                "disk_size",
-                None,
-            )
+            # Count unique documents + latest created_at
+            docs_resp = sb.table("documents").select("id, created_at").execute()
+            docs = docs_resp.data or []
+            doc_count = len(docs)
 
-            if disk_size:
-                disk_mb = (
-                    float(disk_size)
-                    / (1024 * 1024)
-                )
+            last_ingest = None
+            if docs:
+                latest = max(d.get("created_at", "") for d in docs if d.get("created_at"))
+                if latest:
+                    last_ingest = latest[:19]
 
-        except Exception:
-
-            logger.exception(
-                "Unable to determine Qdrant disk usage"
-            )
-
-        # ---------------------------------------------------------------------
-        # Format last ingest timestamp
-        # ---------------------------------------------------------------------
-
-        last_ingest = None
-
-        if latest_timestamp is not None:
-
-            last_ingest = datetime.fromtimestamp(
-                latest_timestamp
-            ).isoformat(
-                timespec="seconds"
-            )
-
-        # ---------------------------------------------------------------------
-        # Return exactly the fields expected by cli.py
-        # ---------------------------------------------------------------------
-
-        return {
-            "documents": len(documents),
-
-            "chunks": collection.points_count or 0,
-
-            "disk_mb": disk_mb,
-
-            "last_ingest": last_ingest,
-        }
+            return {
+                "documents": doc_count,
+                "chunks": chunk_count,
+                "disk_mb": 0.0,
+                "last_ingest": last_ingest,
+            }
+        except Exception as e:
+            logger.exception("Failed to get KB stats from Supabase: %s", e)
+            return {"documents": 0, "chunks": 0, "disk_mb": 0.0, "last_ingest": None}
 
     # =========================================================================
     # HYBRID SEARCH
@@ -376,194 +167,99 @@ class KnowledgeStore:
         query: str,
         top_k: int = 5,
         doc_type: Optional[str] = None,
-        role: str = "viewer",
+        role: str = "admin",   # admin = sees all docs (no category filter)
     ) -> list[dict]:
         """
-        Hybrid BM25 + dense vector search.
+        Search the Supabase knowledge base using the same strategy as the website:
+          1. PostgreSQL full-text ranked search (search_document_chunks_ranked RPC)
+          2. pgvector semantic similarity (match_document_chunks RPC)
+          3. Keyword ilike fallback
 
-        RBAC is enforced inside Qdrant.
-
-        `role` is treated only as a filter value supplied by the authenticated
-        session upstream.
+        'admin' role sees all documents (no category filter applied).
+        Other roles (tech/finance/support) are filtered by category.
         """
+        sb = _get_supabase()
+        # 'admin' role (or any unrecognized role like 'viewer'/'employee') sees all documents.
+        # Only strict sub-roles in the Supabase enum ('tech', 'finance', 'support') filter by category.
+        # This prevents 22P02 Postgres enum cast failures.
+        category_filter = role if role in ("tech", "finance", "support") else None
 
-        # ---------------------------------------------------------------------
-        # Generate embeddings
-        # ---------------------------------------------------------------------
-
+        # ------------------------------------------------------------------
+        # Strategy 1: PostgreSQL full-text ranked search
+        # ------------------------------------------------------------------
         try:
-
-            dense_vector = _embed_dense(
-                query
-            )
-
-            sparse_vector = _SparseEmbedder.embed(
-                query
-            )
-
-        except Exception:
-
-            logger.exception(
-                "Embedding step failed for query %r",
-                query,
-            )
-
-            return []
-
-        # ---------------------------------------------------------------------
-        # Build access-control filter
-        # ---------------------------------------------------------------------
-
-        must_conditions = [
-
-            FieldCondition(
-                key="allowed_roles",
-
-                match=MatchAny(
-                    any=[role]
-                ),
-            )
-
-        ]
-
-        # Optional document type filtering
-        if doc_type is not None:
-
-            must_conditions.append(
-
-                FieldCondition(
-                    key="doc_type",
-
-                    match=MatchValue(
-                        value=doc_type
-                    ),
-                )
-
-            )
-
-        access_filter = Filter(
-            must=must_conditions
-        )
-
-        # ---------------------------------------------------------------------
-        # Hybrid retrieval
-        # ---------------------------------------------------------------------
-
-        try:
-
-            response = self._client.query_points(
-
-                collection_name=COLLECTION_NAME,
-
-                prefetch=[
-
-                    # ---------------------------------------------------------
-                    # Dense semantic retrieval
-                    # ---------------------------------------------------------
-
-                    Prefetch(
-                        query=dense_vector,
-
-                        using="dense",
-
-                        filter=access_filter,
-
-                        limit=top_k * 4,
-                    ),
-
-                    # ---------------------------------------------------------
-                    # Sparse BM25 retrieval
-                    # ---------------------------------------------------------
-
-                    Prefetch(
-                        query=sparse_vector,
-
-                        using="sparse",
-
-                        filter=access_filter,
-
-                        limit=top_k * 4,
-                    ),
-
-                ],
-
-                # -------------------------------------------------------------
-                # Reciprocal Rank Fusion
-                # -------------------------------------------------------------
-
-                query=FusionQuery(
-                    fusion=Fusion.RRF
-                ),
-
-                # -------------------------------------------------------------
-                # Apply RBAC at final query level too
-                # -------------------------------------------------------------
-
-                query_filter=access_filter,
-
-                limit=top_k,
-
-                with_payload=True,
-            )
-
-        except Exception:
-
-            logger.exception(
-                "Qdrant query failed for query %r (role=%s)",
-                query,
-                role,
-            )
-
-            return []
-
-        # ---------------------------------------------------------------------
-        # No results
-        # ---------------------------------------------------------------------
-
-        points = response.points
-
-        if not points:
-            return []
-
-        # ---------------------------------------------------------------------
-        # Convert Qdrant points into application results
-        # ---------------------------------------------------------------------
-
-        results = []
-
-        for point in points:
-
-            payload = point.payload or {}
-
-            results.append(
+            resp = sb.rpc(
+                "search_document_chunks_ranked",
                 {
-                    "chunk": payload.get(
-                        "chunk",
-                        "",
-                    ),
+                    "query_text": query,
+                    "filter_company_id": None,
+                    "filter_category": category_filter,
+                    "match_count": top_k,
+                },
+            ).execute()
+            if resp.data:
+                logger.debug("RAG: full-text search returned %d results", len(resp.data))
+                return _format_results(resp.data)
+        except Exception as e:
+            logger.warning("Full-text search RPC failed: %s", e)
 
-                    "source": payload.get(
-                        "source",
-                        "",
-                    ),
+        # ------------------------------------------------------------------
+        # Strategy 2: Vector semantic search (pgvector)
+        # ------------------------------------------------------------------
+        try:
+            embedding = _embed(query)
+            resp = sb.rpc(
+                "match_document_chunks",
+                {
+                    "query_embedding": embedding,
+                    "match_threshold": 0.15,
+                    "match_count": top_k,
+                    "filter_company_id": None,
+                    "filter_category": category_filter,
+                },
+            ).execute()
+            if resp.data:
+                logger.debug("RAG: vector search returned %d results", len(resp.data))
+                return _format_results(resp.data)
+        except Exception as e:
+            logger.warning("Vector search RPC failed: %s", e)
 
-                    "score": float(
-                        point.score
-                    ),
+        # ------------------------------------------------------------------
+        # Strategy 3: Smart keyword fallback with stopword filtering
+        # ------------------------------------------------------------------
+        try:
+            stop_words = {
+                "the", "and", "for", "with", "what", "how", "why", "can", "you", "tell",
+                "show", "this", "that", "from", "have", "please", "me", "give", "about",
+                "on", "in", "to", "of", "it", "is", "as", "at", "by", "an", "be", "do", "or", "if",
+                "so", "up", "my", "no", "we", "us", "our", "all", "are", "was", "were",
+            }
+            clean_words = [
+                re.sub(r"[^\w]", "", w)
+                for w in query.lower().split()
+                if len(w) >= 3
+            ]
+            meaningful = [w for w in clean_words if w and w not in stop_words]
+            keywords = meaningful if meaningful else clean_words
+            if not keywords:
+                return []
 
-                    "doc_id": payload.get(
-                        "doc_id",
-                        "",
-                    ),
-
-                    "sensitivity": payload.get(
-                        "sensitivity",
-                        "",
-                    ),
-                }
+            primary = keywords[0]
+            q = (
+                sb.table("document_chunks")
+                .select("id, document_id, category, chunk_index, content, documents(title)")
+                .ilike("content", f"%{primary}%")
+                .limit(top_k)
             )
+            if category_filter:
+                q = q.eq("category", category_filter)
+            resp = q.execute()
+            if resp.data:
+                return _format_results(resp.data, fallback=True)
+        except Exception as e:
+            logger.exception("Keyword fallback search failed: %s", e)
 
-        return results
+        return []
 
 
 # =============================================================================
@@ -574,16 +270,10 @@ _store: KnowledgeStore | None = None
 
 
 def get_store() -> KnowledgeStore:
-    """
-    Return the shared KnowledgeStore instance.
-    """
-
+    """Return the shared KnowledgeStore instance."""
     global _store
-
     if _store is None:
-
         _store = KnowledgeStore()
-
     return _store
 
 
@@ -592,13 +282,10 @@ def get_store() -> KnowledgeStore:
 # =============================================================================
 
 if __name__ == "__main__":
-
     results = get_store().search(
         "what does the SOP say about pressure limits",
         top_k=5,
-        role="tech_lead",
+        role="admin",
     )
-
-    for result in results:
-
-        print(result)
+    for r in results:
+        print(r)

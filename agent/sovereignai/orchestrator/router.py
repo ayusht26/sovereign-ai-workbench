@@ -1,11 +1,9 @@
 """
-router.py — Task classifier and model selector.
+router.py — Task classifier and model selector for Bastion.
 
-The router keeps a tiny model (llama3.2:3b) permanently resident and uses it
-to classify every request into one of six categories at temperature=0.
-The router model always runs locally via Ollama, regardless of provider.mode,
-so classification stays instant and never depends on network access.
-The routing decision is always shown in the UI above the response.
+Classifies every user request into one of six categories using
+gpt-4o-mini (fast and cheap). The routing decision is always shown
+in the TUI above the response, using sovereign display names.
 """
 from __future__ import annotations
 
@@ -15,6 +13,7 @@ from typing import NamedTuple
 
 from sovereignai.config import get_config
 from sovereignai.providers import get_llm_client
+from sovereignai.providers.llm_client import display_name_for, display_name_for_category
 
 
 CATEGORIES = frozenset(["general", "coding", "vision", "spreadsheet", "document_qa", "planning"])
@@ -44,11 +43,12 @@ Respond with ONLY this JSON, nothing else:
 
 class RoutingDecision(NamedTuple):
     category: str
-    model_name: str
+    model_name: str          # real API model ID
+    display_name: str        # sovereign label shown in TUI (Qwen3.5-9B, Qwen3-Coder-Next, etc.)
     confidence: float
     reason: str
     uncertain: bool
-    provider: str  # "local" | "api" — which provider the resolved model will run on
+    provider: str            # "local"
 
 
 class Router:
@@ -75,8 +75,6 @@ class Router:
                 messages=messages,
                 temperature=0,
                 max_tokens=60,
-                keep_alive=cfg.router_keep_alive,
-                force_local=True,
             )
             parsed = _parse_router_output(result.content)
         except Exception as e:
@@ -86,7 +84,6 @@ class Router:
                     messages=messages,
                     temperature=0,
                     max_tokens=60,
-                    force_local=True,
                 )
                 parsed = _parse_router_output(result.content)
             except Exception:
@@ -105,14 +102,16 @@ class Router:
             category = "general"
 
         model_name = _resolve_model(cfg, category)
+        display_name = display_name_for_category(category)
 
         return RoutingDecision(
             category=category,
             model_name=model_name,
+            display_name=display_name,
             confidence=confidence,
             reason=reason,
             uncertain=uncertain,
-            provider=cfg.provider_mode,
+            provider="local",
         )
 
     def resolve_model(self, category: str) -> str:

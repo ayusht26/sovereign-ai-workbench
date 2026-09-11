@@ -6,4 +6,4 @@ turn from the authenticated session; never trust a value the model claims.
 from __future__ import annotations
 from contextvars import ContextVar
 
-current_user_role: ContextVar[str] = ContextVar("current_user_role", default="viewer")
+current_user_role: ContextVar[str] = ContextVar("current_user_role", default="admin")

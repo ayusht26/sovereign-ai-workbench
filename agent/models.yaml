@@ -1,63 +1,32 @@
-# SovereignAI — Default Model Configuration
+# Bastion — Default Model Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-# This file maps task categories to local Ollama models and optional API models.
-# Edit this file to use different models — no code changes needed.
-# Copy to ~/.sovereignai/config.yaml and edit there (takes precedence).
+# All inference goes through the OpenAI API.
+# Model display names shown in the TUI match the website's sovereign naming.
+# The actual API model is gpt-4o-mini for all categories (fast, cheap).
 #
-# PROVIDER:
-#   local → use Ollama models running entirely on-premise
-#   api   → use the configured OpenAI-compatible API provider
-#
-# SECURITY:
-#   - Router ALWAYS runs locally.
-#   - Embeddings ALWAYS run locally.
-#   - API keys are read from environment variables and never stored here.
-#
-# UPGRADE PATH:
-#   8GB VRAM (this default)  → see models.* below
-#   24GB single GPU          → swap local general→qwen3.6:27b,
-#                              coding→qwen3-coder:30b,
-#                              vision→qwen2.5vl:32b
-#   Multi-GPU server         → swap local general→llama3.3:70b,
-#                              coding→qwen3-coder:30b,
-#                              vision→qwen2.5vl:72b
-#
-# The model NAMES (general/coding/vision) never change — only the tags.
+# API keys are read from environment variables, never stored here.
+# Set OPENAI_API_KEY in your shell or in agent/.env
 # ─────────────────────────────────────────────────────────────────────────────
-
-hardware_profile: "8gb_vram" # 8gb_vram | 16gb_vram | 24gb_vram | server_multi_gpu
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Provider
 # ─────────────────────────────────────────────────────────────────────────────
-# Administrator switch between completely local inference and an
-# OpenAI-compatible API provider.
-#
-# IMPORTANT:
-#   mode: local → zero external model calls
-#   mode: api   → worker tasks may use the configured API provider
-#
-# The API key itself is NEVER stored in this file.
-# It must exist in the environment variable specified by api_key_env.
-#
 provider:
-  mode: "api" # local | api
-  base_url: "https://openrouter.ai/api/v1"
-  api_key_env: "OPENROUTER_API_KEY"
-  app_url: null # optional HTTP-Referer / application URL
+  mode: "api"
+  base_url: "https://api.openai.com/v1"
+  api_key_env: "OPENAI_API_KEY"
+  app_url: null
+  request_timeout_s: 60
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Router
 # ─────────────────────────────────────────────────────────────────────────────
-# Router ALWAYS runs locally.
-# It classifies every request before selecting a worker model.
-#
-# force_local is intentional: changing provider.mode to "api" must NOT
-# move the router outside the local machine.
+# Classifies every request before selecting a worker model.
+# Now also runs via OpenAI (gpt-4o-mini is fast and cheap enough).
 #
 router:
-  model: "llama3.2:3b"
-  fallback: "llama3.2:3b"
+  model: "gpt-4o-mini"
+  fallback: "gpt-4o-mini"
   keep_alive: -1
   temperature: 0
   max_tokens: 40
@@ -65,79 +34,71 @@ router:
 # ─────────────────────────────────────────────────────────────────────────────
 # Worker models
 # ─────────────────────────────────────────────────────────────────────────────
-# Local:
-#   Ollama model tag used when provider.mode = local.
-#
-# API:
-#   OpenRouter model identifier used when provider.mode = api.
-#
-# Fallback:
-#   Local fallback model. The API provider should not be required for
-#   fallback operation.
+# api: OpenAI model ID used for inference.
+# display_name: Label shown in the TUI (matches the website's sovereign naming).
 #
 models:
   general:
-    api: openai/gpt-oss-20b        # no :free suffix — a few cents per call, but consistently available
-    api_fallback: openrouter/free   # fine as a last-resort dev fallback, not for the actual demo
+    api: "gpt-4o-mini"
+    display_name: "Qwen3.5-9B"           # shown in TUI / routing line
+    api_fallback: "gpt-4o-mini"
   coding:
-    api: openai/gpt-oss-20b
-    api_fallback: openrouter/free
+    api: "gpt-4o-mini"
+    display_name: "Qwen3-Coder-Next"
+    api_fallback: "gpt-4o-mini"
+  vision:
+    api: "gpt-4o-mini"
+    display_name: "Qwen3-VL-32B"
+    api_fallback: "gpt-4o-mini"
   document_qa:
-    api: openai/gpt-oss-20b
-    api_fallback: openrouter/free
+    api: "gpt-4o-mini"
+    display_name: "Qwen3.5-9B"
+    api_fallback: "gpt-4o-mini"
   spreadsheet:
-    api: openai/gpt-oss-20b
-    api_fallback: openrouter/free
+    api: "gpt-4o-mini"
+    display_name: "Qwen3.5-9B"
+    api_fallback: "gpt-4o-mini"
 
-  # Embeddings ALWAYS remain local.
-  # RAG data should never need to leave the machine.
+  # Embeddings — use OpenAI text-embedding-3-small for Supabase pgvector
   embedding:
-    model: "nomic-embed-text"
+    model: "text-embedding-3-small"
+    display_name: "Embedding v3 Small"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Ollama server settings
+# Supabase (RAG backend — same database as the web application)
 # ─────────────────────────────────────────────────────────────────────────────
-ollama:
-  host: "http://127.0.0.1:11434"
-  max_loaded_models: 2
-  request_timeout_s: 600
+supabase:
+  url: "https://tybbzdbglhfnpdvgvrjs.supabase.co"
+  anon_key_env: "SUPABASE_ANON_KEY"
+  # Default anon key (public — same as frontend/.env)
+  anon_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5YmJ6ZGJnbGhmbnBkdmd2cmpzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5MDc5NjYsImV4cCI6MjEwMzQ4Mzk2Nn0.ooAz_wKezqDKd-XxKAI_xZlkY1Hu8w_Tk5EEtzyCYzo"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Workspace settings
 # ─────────────────────────────────────────────────────────────────────────────
 workspace:
-  # Directories the agent is allowed to read/write (in addition to cwd)
-  # Leave empty to restrict to cwd only (recommended for strict deployments)
   allow_list: []
-
-  # Auto-approve creation of NEW files
   auto_approve_new_files: true
-
-  # Require diff preview before overwriting existing files
   require_diff_preview: true
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Sandbox (Docker code execution)
+# Sandbox (Docker code execution — optional)
 # ─────────────────────────────────────────────────────────────────────────────
 sandbox:
   enabled: true
   memory_limit: "2g"
   cpu_limit: 2.0
   timeout_s: 60
-
-  # Pre-pulled images.
-  # Images must already exist on the machine.
-  # They must NEVER be pulled automatically at runtime.
   images:
     python: "python:3.11-slim"
     node: "node:20-slim"
     gcc: "gcc:13"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Knowledge base
+# Knowledge base (Supabase-backed)
 # ─────────────────────────────────────────────────────────────────────────────
 knowledge_base:
-  path: "~/.sovereignai/kb"
+  path: "~/.bastion/kb"
   chunk_size_tokens: 500
   chunk_overlap_tokens: 50
   max_results: 5
@@ -149,20 +110,18 @@ knowledge_base:
 net_guard:
   enabled: true
   poll_interval_ms: 500
-
-  # Alert if any non-loopback, non-LAN connection is detected.
   allowed_hosts:
     - "127.0.0.1"
     - "localhost"
     - "::1"
+    - "api.openai.com"
+    - "tybbzdbglhfnpdvgvrjs.supabase.co"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Audit log
 # ─────────────────────────────────────────────────────────────────────────────
 audit:
-  path: "~/.sovereignai/audit"
-
-  # Never redact content from audit log — it is the compliance trail.
+  path: "~/.bastion/audit"
   redact_content: false
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -44,7 +44,7 @@ class StatusBar(Widget):
 
     def _refresh(self) -> None:
         try:
-            parts = [self._mode, self._model]
+            parts = [self._model] if self._mode == self._model else [self._mode, self._model]
             if self._elapsed:
                 parts.append(self._elapsed)
             self.query_one("#sb-left", Static).update("  ·  ".join(parts))

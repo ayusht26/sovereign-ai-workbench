@@ -39,8 +39,15 @@ class ToolCallBlock(Widget):
 
     DEFAULT_CSS = """
     ToolCallBlock {
-        margin: 1 0;
+        margin: 0 0 1 0;
         padding: 0;
+        height: auto;
+    }
+    ToolCallBlock Collapsible {
+        padding: 0 1;
+        margin: 0;
+        background: transparent;
+        border-top: none;
     }
     ToolCallBlock .tool-header {
         color: #5FA8D3;
@@ -95,24 +102,33 @@ class ToolCallBlock(Widget):
             yield Static("⏳ Running…", classes="running-label", id="result-area")
 
     def set_result(self, result: dict) -> None:
-        """Called when the tool finishes. Updates the result area."""
+        """Called when the tool finishes. Updates the result area and collapses."""
         self._result = result
         self._running = False
 
         try:
+            collapsible = self.query_one(Collapsible)
             result_area = self.query_one("#result-area", Static)
         except Exception:
             return
+
+        icon = _TOOL_ICONS.get(self._tool_name, "🔧")
 
         if result.get("success"):
             data = result.get("data", {})
             file_path = result.get("file_path")
 
-            # Build result text
+            result_summary = "✓ Success"
             result_text = "✅ Success"
             if isinstance(data, dict):
-                # Show key fields
-                show_keys = ["stdout", "stderr", "content", "entries", "matches", "results", "summary"]
+                count = data.get("count")
+                if count is not None:
+                    result_summary = f"✓ Success: {count} result{'s' if count != 1 else ''}"
+                elif data.get("results") and isinstance(data["results"], list):
+                    c = len(data["results"])
+                    result_summary = f"✓ Success: {c} result{'s' if c != 1 else ''}"
+
+                show_keys = ["message", "stdout", "stderr", "content", "entries", "matches", "results", "summary"]
                 for k in show_keys:
                     if k in data and data[k]:
                         val = str(data[k])
@@ -121,12 +137,15 @@ class ToolCallBlock(Widget):
                         result_text += f"\n\n{k}:\n{val}"
                         break
 
-            result_area.remove()
-            self.query_one(Collapsible).collapsed = True
+            result_area.update(result_text)
+            try:
+                result_area.remove_class("running-label")
+            except Exception:
+                pass
+            result_area.add_class("tool-result")
 
-            # Mount result + optional file card
-            result_static = Static(result_text, classes="tool-result")
-            self.query_one(Collapsible).mount(result_static)
+            collapsible.title = f"{icon} Tool: {self._tool_name} ({result_summary})"
+            collapsible.collapsed = True
 
             if file_path:
                 file_card = Static(
@@ -138,5 +157,10 @@ class ToolCallBlock(Widget):
         else:
             error = result.get("error", "Unknown error")
             result_area.update(f"❌ Error: {error}")
-            result_area.set_classes("tool-error")
+            try:
+                result_area.remove_class("running-label")
+            except Exception:
+                pass
+            result_area.add_class("tool-error")
+            collapsible.title = f"{icon} Tool: {self._tool_name} (❌ Error)"
 

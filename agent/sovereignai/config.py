@@ -1,12 +1,12 @@
 """
-config.py — Loads, validates, and exposes SovereignAI configuration.
+config.py — Loads, validates, and exposes Bastion configuration.
 
 Priority (highest first):
-  1. ~/.sovereignai/config.yaml  (user override)
-  2. <package>/models.yaml       (shipped defaults)
+  1. ~/.bastion/config.yaml  (user override)
+  2. <package>/models.yaml   (shipped defaults)
 
-`sovai config edit` opens the user config in $EDITOR.
-`sovai doctor`      calls validate() and reports any missing pieces.
+`bastion config edit` opens the user config in $EDITOR.
+`bastion doctor`      calls validate() and reports any missing pieces.
 """
 from __future__ import annotations
 
@@ -17,14 +17,20 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 import yaml
+
+# Auto-load .env from agent/.env or workspace root
+_AGENT_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(_AGENT_DIR / ".env")
+load_dotenv()
 
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 
 _PACKAGE_DIR = Path(__file__).parent
 _SHIPPED_DEFAULTS = _PACKAGE_DIR.parent / "models.yaml"
-_USER_CONFIG_DIR = Path.home() / ".sovereignai"
+_USER_CONFIG_DIR = Path.home() / ".bastion"
 _USER_CONFIG = _USER_CONFIG_DIR / "config.yaml"
 _AUDIT_DIR = _USER_CONFIG_DIR / "audit"
 _KB_DIR = _USER_CONFIG_DIR / "kb"
@@ -128,7 +134,33 @@ class Config:
     
     @property
     def embedding_model(self) -> str:
-        return self._raw.get("models", {}).get("embedding", {}).get("model", "nomic-embed-text")
+        return self._raw.get("models", {}).get("embedding", {}).get("model", "text-embedding-3-small")
+
+    @property
+    def supabase_url(self) -> str:
+        env_val = (
+            os.environ.get("SUPABASE_URL")
+            or os.environ.get("VITE_SUPABASE_URL")
+            or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+            or ""
+        )
+        if env_val:
+            return env_val
+        return self._raw.get("supabase", {}).get("url", "https://tybbzdbglhfnpdvgvrjs.supabase.co")
+
+    @property
+    def supabase_anon_key(self) -> str:
+        """Returns anon key from env var if set, else falls back to config default."""
+        env_key = self._raw.get("supabase", {}).get("anon_key_env", "SUPABASE_ANON_KEY")
+        env_val = (
+            os.environ.get(env_key)
+            or os.environ.get("VITE_SUPABASE_ANON_KEY")
+            or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+            or ""
+        )
+        if env_val:
+            return env_val
+        return self._raw.get("supabase", {}).get("anon_key", "")
 
     @property
     def workspace_allow_list(self) -> list[str]:
@@ -244,12 +276,10 @@ def reload_config() -> Config:
 
 def doctor(verbose: bool = True) -> bool:
     """
-    Check that all required dependencies are present.
+    Check that all required dependencies are present for Bastion.
     Returns True if everything is OK, False if anything is missing.
     Prints a fix command for each missing item.
     """
-    import importlib
-
     cfg = get_config()
     ok = True
 
@@ -257,77 +287,61 @@ def doctor(verbose: bool = True) -> bool:
         nonlocal ok
         if result:
             if verbose:
-                print(f"  ✅  {label}")
+                print(f"  [OK]  {label}")
         else:
             ok = False
             if verbose:
-                print(f"  ❌  {label}")
-                print(f"       Fix: {fix}")
+                print(f"  [!!]  {label}")
+                print(f"        Fix: {fix}")
 
     if verbose:
-        print("\n🔍 SovereignAI doctor\n")
+        print("\n[*] Bastion doctor\n")
 
     # Python version
     _check(
-        f"Python ≥ 3.11 (found {sys.version.split()[0]})",
+        f"Python >= 3.11 (found {sys.version.split()[0]})",
         sys.version_info >= (3, 11),
         "Install Python 3.11+ from python.org",
     )
 
-    # Ollama running
-    try:
-        import ollama as _ollama_mod
-        _ollama_mod.Client(host=cfg.ollama_host).list()
-        ollama_ok = True
-    except Exception:
-        ollama_ok = False
+    # OpenAI API key
+    api_key_present = bool(os.environ.get(cfg.provider_api_key_env, ""))
     _check(
-        f"Ollama running at {cfg.ollama_host}",
-        ollama_ok,
-        "Start Ollama: `ollama serve`  (or install from https://ollama.com/download)",
+        f"OpenAI API key (${cfg.provider_api_key_env}) set",
+        api_key_present,
+        f"Add OPENAI_API_KEY=sk-... to agent/.env or export it in your shell",
     )
 
-        # Required models — only check what actually needs to be local.
-    # In "api" mode, general/coding/vision run on OpenRouter, so their
-    # presence in `ollama list` is irrelevant; only the router (always
-    # local) and the embedding model (kept local for RAG consistency) matter.
-        # Required models — only check what actually needs to be local.
-    # In "api" mode, general/coding/vision run on OpenRouter, so their
-    # presence in `ollama list` is irrelevant; only the router (always
-    # local) and the embedding model (kept local for RAG consistency) matter.
-    if ollama_ok:
+    # OpenAI API reachable (quick test if key is present)
+    if api_key_present:
         try:
-            import ollama as _ollama_mod
-            pulled = {m.model for m in _ollama_mod.Client(host=cfg.ollama_host).list().models}
-
-            roles_to_check = ["router", "embedding"]
-            if cfg.provider_mode == "local":
-                roles_to_check += ["general", "coding", "vision"]
-
-            for role in roles_to_check:
-                tag = cfg.router_model if role == "router" else (
-                    cfg.embedding_model if role == "embedding" else cfg.model_for(role)
-                )
-                present = any(tag in p for p in pulled)
-                _check(f"Model [{role}] {tag}", present, f"ollama pull {tag}")
+            import httpx
+            r = httpx.get("https://api.openai.com", timeout=5)
+            api_reachable = True
         except Exception:
-            pass
-
-    if cfg.provider_mode == "api":
-        api_key_present = bool(os.environ.get(cfg.provider_api_key_env, ""))
+            api_reachable = False
         _check(
-            f"OpenRouter API key (${cfg.provider_api_key_env}) set",
-            api_key_present,
-            f"export {cfg.provider_api_key_env}=sk-...",
+            "OpenAI API reachable (https://api.openai.com)",
+            api_reachable,
+            "Check your internet connection",
         )
 
-    # Docker
-    docker_ok = shutil.which("docker") is not None
+    # Supabase reachable
+    try:
+        import httpx
+        sb_url = cfg.supabase_url.rstrip("/") + "/rest/v1/"
+        r = httpx.get(sb_url, timeout=5)
+        sb_ok = r.status_code in (200, 401, 400)  # 401 = key required, but reachable
+    except Exception:
+        sb_ok = False
     _check(
-        "Docker installed",
-        docker_ok,
-        "Install Docker Desktop from https://www.docker.com/products/docker-desktop",
+        f"Supabase reachable ({cfg.supabase_url})",
+        sb_ok,
+        "Check your internet connection or Supabase project status",
     )
+
+    # Docker (optional — only needed for sandbox_exec tool)
+    docker_ok = shutil.which("docker") is not None
     if docker_ok:
         try:
             subprocess.run(
@@ -336,24 +350,23 @@ def doctor(verbose: bool = True) -> bool:
             docker_running = True
         except Exception:
             docker_running = False
-        _check(
-            "Docker daemon running",
-            docker_running,
-            "Start Docker Desktop",
-        )
+        if not docker_running and verbose:
+            print("  [!!] Docker not running -- sandbox_exec tool disabled. Start Docker Desktop to enable it.")
+    elif verbose:
+        print("  [!!] Docker not installed -- sandbox_exec tool disabled (optional).")
 
     # User config dir
     _check(
         f"Config dir {_USER_CONFIG_DIR}",
         _USER_CONFIG_DIR.exists(),
-        f"mkdir -p {_USER_CONFIG_DIR}",
+        f"mkdir {_USER_CONFIG_DIR}",
     )
 
     if verbose:
         if ok:
-            print("\n✅  All checks passed. Type `sovai` to launch.\n")
+            print("\n[OK] All checks passed. Type `bastion` to launch.\n")
         else:
-            print("\n❌  Some checks failed. Fix the items above, then run `sovai doctor` again.\n")
+            print("\n[!!] Some checks failed. Fix the items above, then run `bastion doctor` again.\n")
 
     return ok
 
@@ -365,5 +378,6 @@ def open_config_in_editor() -> None:
         shutil.copy(_SHIPPED_DEFAULTS, _USER_CONFIG)
     editor = os.environ.get("EDITOR", "notepad" if sys.platform == "win32" else "nano")
     subprocess.run([editor, str(_USER_CONFIG)])
+
 
 cfg = get_config()
