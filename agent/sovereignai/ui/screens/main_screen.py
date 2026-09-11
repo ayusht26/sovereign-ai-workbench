@@ -18,11 +18,13 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from textual import work
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Input, Static, Label, Footer
 
+from sovereignai.orchestrator.agent_loop import run_agent_turn
 from sovereignai.ui.widgets.chat_thread import ChatThread
 from sovereignai.ui.widgets.status_bar import StatusBar
 def _build_banner(mode: str = "local") -> str:
@@ -260,8 +262,12 @@ class MainScreen(Screen):
         # Focus input
         self.query_one("#input-box", Input).focus()
 
+    @work(thread=True)
     def _periodic_refresh(self) -> None:
         gpu_info = query_gpu()
+        self.app.call_from_thread(self._update_info_panel, gpu_info)
+
+    def _update_info_panel(self, gpu_info: GPUInfo | None) -> None:
         try:
             info = self.query_one("#info-panel", InfoPanel)
             info.refresh_all(
@@ -281,7 +287,7 @@ class MainScreen(Screen):
 
     # ── Input handling ─────────────────────────────────────────────────────
 
-    async def on_input_submitted(self, event: Input.Submitted) -> None:
+    def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         if not text:
             return
@@ -291,9 +297,9 @@ class MainScreen(Screen):
         event.input.clear()
 
         if text.startswith("/"):
-            await self._handle_slash(text)
+            self.run_worker(self._handle_slash(text))
         else:
-            await self._run_turn(text)
+            self._run_turn(text)
 
     async def _handle_slash(self, cmd: str) -> None:
         parts = cmd.split()
@@ -402,21 +408,23 @@ class MainScreen(Screen):
 
     # ── Agent loop (threaded) ──────────────────────────────────────────────
 
+    @work(exclusive=True)
     async def _run_turn(self, user_text: str) -> None:
-        from sovereignai.orchestrator.agent_loop import run_agent_turn
-
         chat = self.query_one("#chat-thread", ChatThread)
         status = self.query_one("#status-bar", StatusBar)
         thinking = self.query_one("#thinking-bar", Static)
+        input_box = self.query_one("#input-box", Input)
 
         self._is_generating = True
         self._session.cancelled = False
         start_time = time.time()
 
+        input_box.placeholder = "Generating… press Esc to interrupt"
+
         await chat.add_user_message(user_text)
         chat.reset_turn_state()
-        await chat.show_loading("Loading your answer…")
-        thinking.update("⏳ Routing…")
+        await chat.show_loading("Thinking…")
+        thinking.update("⏳ Routing task…")
 
         # Queue for thread → async event communication
         queue: asyncio.Queue = asyncio.Queue()
@@ -454,7 +462,9 @@ class MainScreen(Screen):
         finally:
             self._is_generating = False
             thinking.update("")
-            self.query_one("#input-box", Input).focus()
+            await chat.remove_loading()
+            input_box.placeholder = "Ask anything… or type /help for commands"
+            input_box.focus()
             elapsed = time.time() - start_time
             status.set_elapsed(elapsed)
 
@@ -502,7 +512,7 @@ class MainScreen(Screen):
         elif kind == "done":
             await chat.remove_loading()
             # Finalize the last stream as the answer
-            await chat.finalize_stream_as_answer()
+            await chat.finalize_stream_as_answer(fallback_text=evt.get("text", ""))
             thinking.update("")
             status.set_elapsed(time.time() - start_time)
 
@@ -512,7 +522,7 @@ class MainScreen(Screen):
 
         elif kind == "max_iterations_reached":
             await chat.remove_loading()
-            await chat.finalize_stream_as_answer()
+            await chat.finalize_stream_as_answer(fallback_text=evt.get("text", ""))
             await chat.add_system_message("⚠ Reached max iterations.", "warning")
 
         elif kind == "interrupted":

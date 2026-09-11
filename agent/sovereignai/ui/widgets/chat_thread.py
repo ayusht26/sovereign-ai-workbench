@@ -34,7 +34,7 @@ class UserMessage(Widget):
         self._text = text
 
     def compose(self) -> ComposeResult:
-        yield Static(self._text)
+        yield Static(self._text, markup=False)
 
 
 class RoutingLine(Widget):
@@ -112,7 +112,7 @@ class LoadingIndicator(Widget):
         "○ ● ○ ○",
     ]
 
-    def __init__(self, text: str = "Loading your answer…", **kwargs) -> None:
+    def __init__(self, text: str = "Thinking…", **kwargs) -> None:
         super().__init__(**kwargs)
         self._text = text
         self._frame = 0
@@ -122,7 +122,7 @@ class LoadingIndicator(Widget):
         yield Static(f"⏳ {self._text}  {self.DOT_FRAMES[0]}", id="loading-label")
 
     def on_mount(self) -> None:
-        self._timer = self.set_interval(0.2, self._tick)
+        self._timer = self.set_interval(0.15, self._tick)
 
     def _tick(self) -> None:
         self._frame = (self._frame + 1) % len(self.DOT_FRAMES)
@@ -139,6 +139,14 @@ class LoadingIndicator(Widget):
             self.query_one("#loading-label", Static).update(f"⏳ {self._text}  {dots}")
         except Exception:
             pass
+
+    def on_unmount(self) -> None:
+        if self._timer is not None:
+            try:
+                self._timer.stop()
+            except Exception:
+                pass
+            self._timer = None
 
 
 class AssistantMessage(Widget):
@@ -233,18 +241,23 @@ class ChatThread(VerticalScroll):
 
     # ── Public API ─────────────────────────────────────────────────────────
 
+    def scroll_to_bottom(self, animate: bool = False) -> None:
+        """Ensure the chat container scrolls to show the latest content."""
+        self.scroll_end(animate=animate)
+        self.call_after_refresh(self.scroll_end, animate=animate)
+
     async def add_user_message(self, text: str) -> None:
         await self.mount(UserMessage(text))
-        self.scroll_end(animate=False)
+        self.scroll_to_bottom()
 
-    async def show_loading(self, text: str = "Loading your answer…") -> None:
+    async def show_loading(self, text: str = "Thinking…") -> None:
         """Show or update the animated loading dots indicator."""
         if self._loading is not None:
             self._loading.set_status(text)
             return
         self._loading = LoadingIndicator(text=text)
         await self.mount(self._loading)
-        self.scroll_end(animate=False)
+        self.scroll_to_bottom()
 
     def set_loading_status(self, text: str) -> None:
         """Update status text of existing loading indicator."""
@@ -267,9 +280,13 @@ class ChatThread(VerticalScroll):
         else:
             text = f"→ {category} ({model}) · {confidence:.2f} conf · {reason}"
         
-        # If loading indicator is visible, mount routing line right before/around it
-        await self.mount(RoutingLine(text, uncertain=uncertain))
-        self.scroll_end(animate=False)
+        routing_widget = RoutingLine(text, uncertain=uncertain)
+        if self._loading is not None:
+            # Mount the routing decision line above the active spinner
+            await self.mount(routing_widget, before=self._loading)
+        else:
+            await self.mount(routing_widget)
+        self.scroll_to_bottom()
 
     async def stream_chunk(self, chunk: str) -> None:
         """Add a streaming chunk to the live text area with instant rendering."""
@@ -280,7 +297,7 @@ class ChatThread(VerticalScroll):
             self._step_start = time.time()
             await self.mount(self._live)
         self._live.append(chunk)
-        self.scroll_end(animate=False)
+        self.scroll_to_bottom()
 
     async def finalize_stream_as_thought(self) -> None:
         """Convert the current live text into a collapsed thought block."""
@@ -296,41 +313,46 @@ class ChatThread(VerticalScroll):
         thought = ThoughtBlock(duration_ms=duration_ms, text=text)
         await self.mount(thought)
         self._thought = thought
-        self.scroll_end(animate=False)
+        self.scroll_to_bottom()
 
-    async def finalize_stream_as_answer(self) -> None:
+    async def finalize_stream_as_answer(self, fallback_text: str = "") -> None:
         """Convert the current live text into a rendered markdown assistant answer."""
         await self.remove_loading()
-        if self._live is None:
-            return
-        text = self._live.get_text().strip()
-        await self._live.remove()
-        self._live = None
+        text = ""
+        if self._live is not None:
+            text = self._live.get_text().strip()
+            try:
+                await self._live.remove()
+            except Exception:
+                pass
+            self._live = None
+        if not text and fallback_text:
+            text = fallback_text.strip()
         if not text:
             return
         msg = AssistantMessage(text)
         await self.mount(msg)
-        self.scroll_end(animate=False)
+        self.scroll_to_bottom()
 
     async def add_tool_call_block(self, call_id: str, name: str, args: dict) -> ToolCallBlock:
         await self.remove_loading()
         block = ToolCallBlock(tool_name=name, args=args)
         self._current_tool_blocks[call_id] = block
         await self.mount(block)
-        self.scroll_end(animate=False)
+        self.scroll_to_bottom()
         return block
 
     def finish_tool_call(self, call_id: str, result: dict) -> None:
         block = self._current_tool_blocks.get(call_id)
         if block:
             block.set_result(result)
-            self.scroll_end(animate=False)
+            self.scroll_to_bottom()
 
     async def add_system_message(self, text: str, style: str = "info") -> None:
         await self.remove_loading()
         await self.mount(SystemMessage(text, style=style))
-        self.scroll_end(animate=False)
+        self.scroll_to_bottom()
 
     async def add_divider(self) -> None:
         await self.mount(Static("─" * 60, classes="divider"))
-        self.scroll_end(animate=False)
+        self.scroll_to_bottom()
