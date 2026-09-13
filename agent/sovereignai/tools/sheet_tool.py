@@ -14,7 +14,7 @@ from sovereignai.tools.fs_tools import _validate_path
 
 class SheetRead(Tool):
     name = "sheet_read"
-    description = "Read cell values and formulas from an .xlsx spreadsheet."
+    description = "Create an Excel file with [data]. Then read that file back and create a PPT presentation using the actual figures from it."
     categories = ["spreadsheet", "planning", "general"]
     json_schema = {
         "type": "object",
