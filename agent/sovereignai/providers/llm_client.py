@@ -65,7 +65,7 @@ def display_name_for(model_id: str) -> str:
 def resolve_real_model(model_or_display: str) -> str:
     """Map any sovereign display name or category to the underlying API model ID."""
     if not model_or_display:
-        return "gpt-4o-mini"
+        return "gpt-4o"
     # If already a standard API model ID
     if model_or_display.startswith("gpt-") or model_or_display.startswith("o1") or model_or_display.startswith("o3"):
         return model_or_display
@@ -73,13 +73,13 @@ def resolve_real_model(model_or_display: str) -> str:
     # If category name
     if model_or_display in ("general", "coding", "vision", "document_qa", "spreadsheet", "planning"):
         node = cfg._raw.get("models", {}).get(model_or_display, {})
-        return node.get("api") or node.get("model", "gpt-4o-mini")
+        return node.get("api") or node.get("model", "gpt-4o")
     # If sovereign display name
     for cat in ["general", "coding", "vision", "document_qa", "spreadsheet", "planning"]:
         node = cfg._raw.get("models", {}).get(cat, {})
         if node.get("display_name") == model_or_display:
-            return node.get("api") or node.get("model", "gpt-4o-mini")
-    return "gpt-4o-mini"
+            return node.get("api") or node.get("model", "gpt-4o")
+    return "gpt-4o"
 
 
 # ── Data types ────────────────────────────────────────────────────────────────

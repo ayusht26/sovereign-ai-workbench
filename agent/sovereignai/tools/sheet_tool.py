@@ -1,11 +1,14 @@
 """
-sheet_tool.py — openpyxl-based spreadsheet read/write tools.
+sheet_tool.py — openpyxl-based spreadsheet read/write and executive workbook creation tools.
 
 Preserves existing formatting and formulas on read-modify-write cycles.
+Creates polished, corporate-styled spreadsheets with auto-fitted columns,
+navy header bands, alternating zebra striping, accounting borders, and proper number formatting.
 """
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any
 
 from sovereignai.tools.base import Tool, ToolResult
@@ -14,7 +17,7 @@ from sovereignai.tools.fs_tools import _validate_path
 
 class SheetRead(Tool):
     name = "sheet_read"
-    description = "Create an Excel file with [data]. Then read that file back and create a PPT presentation using the actual figures from it."
+    description = "Read a spreadsheet (.xlsx) into structured rows and cells."
     categories = ["spreadsheet", "planning", "general"]
     json_schema = {
         "type": "object",
@@ -123,7 +126,10 @@ class SheetWrite(Tool):
 
 class SheetCreate(Tool):
     name = "sheet_create"
-    description = "Create a new .xlsx spreadsheet with headers and rows."
+    description = (
+        "Create an executive-grade .xlsx spreadsheet workbook with styled navy headers, "
+        "auto-fitted columns, alternating row striping, number formatting, and optional totals row."
+    )
     categories = ["spreadsheet", "planning", "general"]
     json_schema = {
         "type": "object",
@@ -136,42 +142,238 @@ class SheetCreate(Tool):
                 "description": "List of row arrays (each row is a list of values)",
                 "items": {"type": "array"},
             },
+            "summary_row": {
+                "type": "array",
+                "description": "Optional totals / summary row e.g. ['Total', 45200, 1200, '=AVERAGE(...)']",
+            },
+            "sheets": {
+                "type": "array",
+                "description": "Optional multiple sheets: list of {sheet_name, headers, rows, summary_row}",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "sheet_name": {"type": "string"},
+                        "headers": {"type": "array", "items": {"type": "string"}},
+                        "rows": {"type": "array", "items": {"type": "array"}},
+                        "summary_row": {"type": "array"},
+                    },
+                    "required": ["sheet_name", "headers", "rows"],
+                },
+            },
         },
         "required": ["path", "headers"],
     }
 
-    def run(self, path: str, headers: list[str], rows: list[list] | None = None, sheet_name: str = "Sheet1") -> ToolResult:
+    def _parse_val(self, val: Any) -> tuple[Any, str | None, str]:
+        """
+        Coerce string representations of numbers to int/float with appropriate Excel number formats.
+        Returns: (parsed_val, number_format, alignment: 'left'|'center'|'right')
+        """
+        if val is None:
+            return "", None, "center"
+
+        # Direct number types
+        if isinstance(val, bool):
+            return val, None, "center"
+        if isinstance(val, int):
+            # If looks like a year (1900..2100), keep as integer without commas
+            if 1900 <= val <= 2100:
+                return val, "0", "center"
+            return val, "#,##0", "right"
+        if isinstance(val, float):
+            return val, "#,##0.00", "right"
+
+        val_str = str(val).strip()
+
+        # Check if formula
+        if val_str.startswith("="):
+            return val_str, None, "right"
+
+        # Check for year strings e.g. "2019", "FY 2022"
+        if re.match(r"^(19|20)\d\d$", val_str):
+            try:
+                return int(val_str), "0", "center"
+            except ValueError:
+                return val_str, None, "center"
+        if re.match(r"^FY\s*(19|20)\d\d(-\d\d)?$", val_str, re.IGNORECASE):
+            return val_str, None, "center"
+
+        # Check for percentage e.g. "15.4%" or "+8.2%"
+        pct_match = re.match(r"^([+-]?\d+(?:\.\d+)?)\s*%$", val_str)
+        if pct_match:
+            try:
+                return float(pct_match.group(1)) / 100.0, "0.0%", "right"
+            except ValueError:
+                pass
+
+        # Check for currency e.g. "$1,234.56" or "₹45,200" or "$450M"
+        curr_match = re.match(r"^[$₹€£]\s*([+-]?[\d,]+(?:\.\d+)?)$", val_str)
+        if curr_match:
+            clean_num = curr_match.group(1).replace(",", "")
+            try:
+                f_val = float(clean_num)
+                prefix = val_str[0]
+                fmt = f'"{prefix}"#,##0.00' if "." in clean_num else f'"{prefix}"#,##0'
+                return f_val, fmt, "right"
+            except ValueError:
+                pass
+
+        # Check for standard comma-separated or plain numbers e.g. "1,234,567.89" or "45000"
+        num_match = re.match(r"^([+-]?[\d,]+(?:\.\d+)?)$", val_str)
+        if num_match and any(c.isdigit() for c in val_str):
+            clean_num = val_str.replace(",", "")
+            try:
+                if "." in clean_num:
+                    return float(clean_num), "#,##0.00", "right"
+                else:
+                    return int(clean_num), "#,##0", "right"
+            except ValueError:
+                pass
+
+        return val_str, None, "left"
+
+    def _style_worksheet(
+        self,
+        ws,
+        headers: list[str],
+        rows: list[list] | None = None,
+        summary_row: list | None = None,
+    ) -> None:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+
+        # Color Palette
+        NAVY_FILL = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+        ZEBRA_FILL = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+        WHITE_FILL = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+
+        HDR_FONT = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+        REGULAR_FONT = Font(name="Segoe UI", size=10, color="1E293B")
+        BOLD_FONT = Font(name="Segoe UI", size=10.5, bold=True, color="0F172A")
+
+        THIN_BORDER = Border(
+            left=Side(style='thin', color='CBD5E1'),
+            right=Side(style='thin', color='CBD5E1'),
+            top=Side(style='thin', color='CBD5E1'),
+            bottom=Side(style='thin', color='CBD5E1')
+        )
+        SUMMARY_BORDER = Border(
+            left=Side(style='thin', color='CBD5E1'),
+            right=Side(style='thin', color='CBD5E1'),
+            top=Side(style='thin', color='1E293B'),
+            bottom=Side(style='double', color='1E293B')
+        )
+
+        # 1. Write Header Row
+        ws.row_dimensions[1].height = 28
+        for col_idx, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_idx, value=str(h))
+            cell.fill = NAVY_FILL
+            cell.font = HDR_FONT
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = THIN_BORDER
+
+        # 2. Write Data Rows
+        current_row = 2
+        for row_data in (rows or []):
+            ws.row_dimensions[current_row].height = 22
+            row_fill = ZEBRA_FILL if current_row % 2 == 0 else WHITE_FILL
+
+            for col_idx in range(1, len(headers) + 1):
+                raw_val = row_data[col_idx - 1] if (col_idx - 1) < len(row_data) else ""
+                val, num_fmt, align = self._parse_val(raw_val)
+
+                cell = ws.cell(row=current_row, column=col_idx, value=val)
+                cell.font = REGULAR_FONT
+                cell.fill = row_fill
+                cell.border = THIN_BORDER
+                cell.alignment = Alignment(horizontal=align, vertical="center")
+                if num_fmt:
+                    cell.number_format = num_fmt
+
+            current_row += 1
+
+        # 3. Write Summary Row if provided
+        if summary_row:
+            ws.row_dimensions[current_row].height = 24
+            for col_idx in range(1, len(headers) + 1):
+                raw_val = summary_row[col_idx - 1] if (col_idx - 1) < len(summary_row) else ""
+                val, num_fmt, align = self._parse_val(raw_val)
+
+                cell = ws.cell(row=current_row, column=col_idx, value=val)
+                cell.font = BOLD_FONT
+                cell.fill = WHITE_FILL
+                cell.border = SUMMARY_BORDER
+                cell.alignment = Alignment(horizontal=align, vertical="center")
+                if num_fmt:
+                    cell.number_format = num_fmt
+            current_row += 1
+
+        # 4. Auto-fit column widths with breathing room
+        for col in ws.columns:
+            col_letter = get_column_letter(col[0].column)
+            max_len = 0
+            for cell in col:
+                val_str = str(cell.value or "")
+                if val_str.startswith("="):
+                    max_len = max(max_len, 10)
+                else:
+                    max_len = max(max_len, len(val_str))
+            ws.column_dimensions[col_letter].width = max(14, min(max_len + 4, 50))
+
+        # 5. Freeze Header Pane & Enable Gridlines
+        ws.freeze_panes = "A2"
+        if ws.views.sheetView:
+            ws.views.sheetView[0].showGridLines = True
+        ws.auto_filter.ref = ws.dimensions
+
+    def run(
+        self,
+        path: str,
+        headers: list[str],
+        rows: list[list] | None = None,
+        sheet_name: str = "Sheet1",
+        summary_row: list | None = None,
+        sheets: list[dict] | None = None,
+    ) -> ToolResult:
         p = _validate_path(path)
         if p is None:
             return ToolResult.fail(f"Path '{path}' outside workspace.")
 
         try:
             import openpyxl
-            from openpyxl.styles import Font
             wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = sheet_name
 
-            # Write headers in bold
-            for col_idx, header in enumerate(headers, 1):
-                cell = ws.cell(row=1, column=col_idx, value=header)
-                cell.font = Font(bold=True)
+            if sheets and len(sheets) > 0:
+                for idx, s_def in enumerate(sheets):
+                    s_name = s_def.get("sheet_name", f"Sheet{idx + 1}")[:31]
+                    s_headers = s_def.get("headers", headers)
+                    s_rows = s_def.get("rows", [])
+                    s_sum = s_def.get("summary_row")
 
-            # Write data rows
-            for row_idx, row in enumerate(rows or [], 2):
-                for col_idx, val in enumerate(row, 1):
-                    ws.cell(row=row_idx, column=col_idx, value=val)
+                    ws = wb.active if idx == 0 else wb.create_sheet(title=s_name)
+                    ws.title = s_name
+                    self._style_worksheet(ws, headers=s_headers, rows=s_rows, summary_row=s_sum)
+                sheet_count = len(sheets)
+            else:
+                ws = wb.active
+                ws.title = sheet_name[:31] or "Sheet1"
+                self._style_worksheet(ws, headers=headers, rows=rows, summary_row=summary_row)
+                sheet_count = 1
 
             p.parent.mkdir(parents=True, exist_ok=True)
             wb.save(str(p))
+
             return ToolResult.ok({
                 "path": str(p),
-                "sheets": [sheet_name],
+                "sheets": sheet_count,
                 "rows": len(rows or []),
                 "cols": len(headers),
+                "size_bytes": p.stat().st_size,
             }, file_path=str(p))
+
         except ImportError:
             return ToolResult.fail("openpyxl not installed.")
         except Exception as e:
             return ToolResult.fail(str(e))
-

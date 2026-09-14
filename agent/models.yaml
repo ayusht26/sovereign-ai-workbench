@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # All inference goes through the OpenAI API.
 # Model display names shown in the TUI match the website's sovereign naming.
-# The actual API model is gpt-4o-mini for all categories (fast, cheap).
+# The actual API model is gpt-4o for all worker categories (flagship reasoning & multimodal).
 #
 # API keys are read from environment variables, never stored here.
 # Set OPENAI_API_KEY in your shell or in agent/.env
@@ -22,7 +22,7 @@ provider:
 # Router
 # ─────────────────────────────────────────────────────────────────────────────
 # Classifies every request before selecting a worker model.
-# Now also runs via OpenAI (gpt-4o-mini is fast and cheap enough).
+# Runs fast via OpenAI gpt-4o-mini for low latency routing.
 #
 router:
   model: "gpt-4o-mini"
@@ -34,29 +34,29 @@ router:
 # ─────────────────────────────────────────────────────────────────────────────
 # Worker models
 # ─────────────────────────────────────────────────────────────────────────────
-# api: OpenAI model ID used for inference.
+# api: OpenAI model ID used for inference (upgraded to flagship gpt-4o).
 # display_name: Label shown in the TUI (matches the website's sovereign naming).
 #
 models:
   general:
-    api: "gpt-4o-mini"
-    display_name: "Qwen3.5-9B"           # shown in TUI / routing line
+    api: "gpt-4o"
+    display_name: "Qwen3.6-27B"           # shown in TUI / routing line
     api_fallback: "gpt-4o-mini"
   coding:
-    api: "gpt-4o-mini"
+    api: "gpt-4o"
     display_name: "Qwen3-Coder-Next"
     api_fallback: "gpt-4o-mini"
   vision:
-    api: "gpt-4o-mini"
+    api: "gpt-4o"
     display_name: "Qwen3-VL-32B"
     api_fallback: "gpt-4o-mini"
   document_qa:
-    api: "gpt-4o-mini"
-    display_name: "Qwen3.5-9B"
+    api: "gpt-4o"
+    display_name: "Qwen3.6-27B"
     api_fallback: "gpt-4o-mini"
   spreadsheet:
-    api: "gpt-4o-mini"
-    display_name: "Qwen3.5-9B"
+    api: "gpt-4o"
+    display_name: "Qwen3.6-27B"
     api_fallback: "gpt-4o-mini"
 
   # Embeddings — use OpenAI text-embedding-3-small for Supabase pgvector

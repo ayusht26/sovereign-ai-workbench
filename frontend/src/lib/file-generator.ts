@@ -82,6 +82,8 @@ export interface PptxSlideInput {
   slideTitle: string;
   subtitle?: string;
   bulletPoints?: string[];
+  cards?: { title: string; body: string }[];
+  metrics?: { value: string; label: string }[];
   bodyText?: string;
   speakerNotes?: string;
 }
@@ -135,6 +137,45 @@ export function generateTxtFile(options: TxtGeneratorOptions): GeneratedFile {
       previewContent: previewLines,
     },
   };
+}
+
+// Helper to parse markdown bold (**text**), italics (*text*), and code (`code`) into docx TextRuns
+function parseFormattedRuns(text: string, defaultColor = '334155', defaultSize = 22): TextRun[] {
+  const tokens = text.split(/(\*\*.*?\*\*|\*.*?\*|`.*?`)/g);
+  return tokens.filter(Boolean).map((token) => {
+    if (token.startsWith('**') && token.endsWith('**') && token.length >= 4) {
+      return new TextRun({
+        text: token.slice(2, -2),
+        bold: true,
+        size: defaultSize,
+        color: '0F172A',
+        font: 'Segoe UI',
+      });
+    }
+    if (token.startsWith('*') && token.endsWith('*') && token.length >= 2) {
+      return new TextRun({
+        text: token.slice(1, -1),
+        italics: true,
+        size: defaultSize,
+        color: defaultColor,
+        font: 'Segoe UI',
+      });
+    }
+    if (token.startsWith('`') && token.endsWith('`') && token.length >= 2) {
+      return new TextRun({
+        text: token.slice(1, -1),
+        size: defaultSize - 2,
+        color: '475569',
+        font: 'Consolas',
+      });
+    }
+    return new TextRun({
+      text: token,
+      size: defaultSize,
+      color: defaultColor,
+      font: 'Segoe UI',
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -242,13 +283,8 @@ export async function generateDocxFile(options: DocxGeneratorOptions): Promise<G
         if (!p.trim()) continue;
         docElements.push(
           new Paragraph({
-            text: p.trim(),
             spacing: { after: 120, line: 276 },
-            run: {
-              size: 22,
-              color: '334155',
-              font: 'Segoe UI',
-            },
+            children: parseFormattedRuns(p.trim(), '334155', 22),
           })
         );
       }
@@ -261,14 +297,7 @@ export async function generateDocxFile(options: DocxGeneratorOptions): Promise<G
           new Paragraph({
             bullet: { level: 0 },
             spacing: { after: 80 },
-            children: [
-              new TextRun({
-                text: bp,
-                size: 22,
-                color: '334155',
-                font: 'Segoe UI',
-              }),
-            ],
+            children: parseFormattedRuns(bp, '334155', 22),
           })
         );
       }
@@ -596,55 +625,151 @@ export async function generatePptxFile(options: PptxGeneratorOptions): Promise<G
       });
     }
 
-    // Card background for content container
-    slide.addShape(pptx.ShapeType.roundRect, {
-      x: 0.8,
-      y: slideData.subtitle ? 2.1 : 1.7,
-      w: 11.7,
-      h: 4.6,
-      rectRadius: 0.15,
-      fill: { color: CARD_BG },
-      line: { color: BORDER_COLOR, width: 1 },
-    });
+    // Render Metrics / Cards or Standard Container
+    if (slideData.metrics && slideData.metrics.length > 0) {
+      const metrics = slideData.metrics.slice(0, 4);
+      const count = metrics.length;
+      const gap = 0.35;
+      const totalW = 11.7;
+      const boxW = (totalW - gap * (count - 1)) / count;
+      const boxH = 4.5;
+      const startX = 0.8;
+      const startY = slideData.subtitle ? 2.1 : 1.7;
 
-    let currentY = (slideData.subtitle ? 2.1 : 1.7) + 0.3;
+      metrics.forEach((m, mIdx) => {
+        const mx = startX + mIdx * (boxW + gap);
+        slide.addShape(pptx.ShapeType.roundRect, {
+          x: mx,
+          y: startY,
+          w: boxW,
+          h: boxH,
+          rectRadius: 0.15,
+          fill: { color: CARD_BG },
+          line: { color: BORDER_COLOR, width: 1 },
+        });
 
-    // Body Text if present
-    if (slideData.bodyText) {
-      slide.addText(slideData.bodyText, {
-        x: 1.2,
-        y: currentY,
-        w: 10.9,
-        h: 1.0,
-        fontSize: 15,
-        color: TEXT_MUTED,
-        fontFace: 'Segoe UI',
-        valign: 'top',
-      });
-      currentY += 1.1;
-    }
+        slide.addText(m.value, {
+          x: mx + 0.2,
+          y: startY + 1.2,
+          w: boxW - 0.4,
+          h: 1.0,
+          fontSize: 34,
+          color: ACCENT_COLOR,
+          bold: true,
+          fontFace: 'Segoe UI',
+          align: 'center',
+          valign: 'middle',
+        });
 
-    // Bullet points
-    if (slideData.bulletPoints && slideData.bulletPoints.length > 0) {
-      const bulletItems = slideData.bulletPoints.map((bp) => ({
-        text: `  ${bp}`,
-        options: {
-          fontSize: 15,
+        slide.addText(m.label, {
+          x: mx + 0.2,
+          y: startY + 2.3,
+          w: boxW - 0.4,
+          h: 0.8,
+          fontSize: 14,
           color: TEXT_WHITE,
-          bullet: { type: 'bullet', code: '2022' },
-          breakLine: true,
-        },
-      }));
-
-      slide.addText(bulletItems, {
-        x: 1.2,
-        y: currentY,
-        w: 10.9,
-        h: Math.max(4.6 - (currentY - (slideData.subtitle ? 2.1 : 1.7)) - 0.3, 1.0),
-        fontFace: 'Segoe UI',
-        lineSpacing: 26,
-        valign: 'top',
+          fontFace: 'Segoe UI',
+          align: 'center',
+          valign: 'top',
+        });
       });
+    } else if (slideData.cards && slideData.cards.length > 0) {
+      const cards = slideData.cards.slice(0, 4);
+      const count = cards.length;
+      const gap = 0.35;
+      const totalW = 11.7;
+      const cardW = (totalW - gap * (count - 1)) / count;
+      const cardH = 4.5;
+      const startX = 0.8;
+      const startY = slideData.subtitle ? 2.1 : 1.7;
+
+      cards.forEach((c, cIdx) => {
+        const cx = startX + cIdx * (cardW + gap);
+        slide.addShape(pptx.ShapeType.roundRect, {
+          x: cx,
+          y: startY,
+          w: cardW,
+          h: cardH,
+          rectRadius: 0.15,
+          fill: { color: CARD_BG },
+          line: { color: BORDER_COLOR, width: 1 },
+        });
+
+        slide.addText(c.title, {
+          x: cx + 0.25,
+          y: startY + 0.3,
+          w: cardW - 0.5,
+          h: 0.6,
+          fontSize: 16,
+          color: ACCENT_COLOR,
+          bold: true,
+          fontFace: 'Segoe UI',
+          valign: 'top',
+        });
+
+        slide.addText(c.body, {
+          x: cx + 0.25,
+          y: startY + 0.95,
+          w: cardW - 0.5,
+          h: cardH - 1.2,
+          fontSize: 13,
+          color: TEXT_MUTED,
+          fontFace: 'Segoe UI',
+          lineSpacing: 22,
+          valign: 'top',
+        });
+      });
+    } else {
+      // Card background for standard content container
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: 0.8,
+        y: slideData.subtitle ? 2.1 : 1.7,
+        w: 11.7,
+        h: 4.6,
+        rectRadius: 0.15,
+        fill: { color: CARD_BG },
+        line: { color: BORDER_COLOR, width: 1 },
+      });
+
+      let currentY = (slideData.subtitle ? 2.1 : 1.7) + 0.3;
+
+      // Body Text if present
+      if (slideData.bodyText) {
+        slide.addText(slideData.bodyText, {
+          x: 1.2,
+          y: currentY,
+          w: 10.9,
+          h: 1.0,
+          fontSize: 15,
+          color: TEXT_MUTED,
+          fontFace: 'Segoe UI',
+          valign: 'top',
+        });
+        currentY += 1.1;
+      }
+
+      // Bullet points
+      if (slideData.bulletPoints && slideData.bulletPoints.length > 0) {
+        const bulletItems = slideData.bulletPoints.map((bp) => ({
+          text: `  ${bp}`,
+          options: {
+            fontSize: 15,
+            color: TEXT_WHITE,
+            bullet: { type: 'bullet', code: '2022' },
+            breakLine: true,
+          },
+        }));
+
+        slide.addText(bulletItems, {
+          x: 1.2,
+          y: currentY,
+          w: 10.9,
+          h: Math.max(4.6 - (currentY - (slideData.subtitle ? 2.1 : 1.7)) - 0.3, 1.0),
+          fontFace: 'Segoe UI',
+          lineSpacing: 26,
+          valign: 'top',
+        });
+      }
     }
 
     // Speaker notes

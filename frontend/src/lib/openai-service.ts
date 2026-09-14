@@ -1,6 +1,6 @@
 /**
  * OpenAI API client service for Sovereign AI Workbench
- * Executes intelligent chat responses using cost-effective models (gpt-4o-mini),
+ * Executes intelligent chat responses using flagship models (gpt-4o),
  * DALL-E image generation, and authentic file generation tools (.txt, .docx, .xlsx, .pptx).
  */
 
@@ -31,6 +31,16 @@ export function getOpenAIApiKey(): string {
     return process.env?.OPENAI_API_KEY || process.env?.VITE_OPENAI_API_KEY || "";
   }
   return "";
+}
+
+export function getOpenAIModel(): string {
+  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_OPENAI_MODEL) {
+    return import.meta.env.VITE_OPENAI_MODEL;
+  }
+  if (typeof process !== "undefined" && (process.env?.OPENAI_MODEL || process.env?.VITE_OPENAI_MODEL)) {
+    return process.env.OPENAI_MODEL || process.env.VITE_OPENAI_MODEL || "gpt-4o";
+  }
+  return "gpt-4o";
 }
 
 export const OPENAI_API_KEY = getOpenAIApiKey();
@@ -311,7 +321,7 @@ const FILE_GENERATION_TOOLS = [
     function: {
       name: "create_excel_spreadsheet",
       description:
-        "Generate a multi-sheet Microsoft Excel spreadsheet workbook (.xlsx) with clean headers, numeric data, and optional summary/total row. Call this whenever the user asks for an excel sheet, xlsx, spreadsheet, table export, budget, inventory, ledger, or numerical model.",
+        "Generate a multi-sheet Microsoft Excel spreadsheet workbook (.xlsx) with clean headers, numeric data, and optional summary/total row. MUST POPULATE ALL ROWS WITH COMPLETE DATA — NEVER output null, None, or empty placeholders. Call this whenever the user asks for an excel sheet, xlsx, spreadsheet, table export, budget, inventory, ledger, or numerical model.",
       parameters: {
         type: "object",
         properties: {
@@ -474,7 +484,11 @@ export async function executeOpenAIChat({
     `- 'create_excel_spreadsheet': For Excel workbooks (.xlsx), budgets, inventories, ledgers, numerical models.\n` +
     `- 'create_powerpoint_presentation': For 16:9 PowerPoint slide decks (.pptx), pitch decks, overviews.\n` +
     `- 'create_text_file': For text files (.txt), scripts (.py, .sh), configs, markdown notes, code.\n` +
-    `CRITICAL: Whenever the user asks you to create, draft, build, generate, provide, or export a file, report, spreadsheet, presentation, or text document, YOU MUST CALL THE CORRESPONDING TOOL with comprehensive, realistic, and highly detailed data. Also provide a polite, professional executive summary in your response text.\n`;
+    `CRITICAL: Whenever the user asks you to create, draft, build, generate, provide, or export a file, report, spreadsheet, presentation, or text document, YOU MUST CALL THE CORRESPONDING TOOL with comprehensive, realistic, and executive-grade data:\n` +
+    `  - ZERO-PLACEHOLDER RULE: Every single row and cell in an Excel workbook must be fully populated with real numbers, verified years, or calculated totals. NEVER output 'null', 'None', or empty placeholder cells!\n` +
+    `  - Word Documents: Must be rich, substantive multi-paragraph deliverables with executive summary, detailed sections, bullet points with bold lead-ins, and structured data tables. Never produce shallow 1-sentence sections!\n` +
+    `  - PowerPoint Decks: Must be modern 16:9 executive decks with informative titles, category tags, multi-column cards, KPI metrics, and complete speaker notes.\n` +
+    `Also provide a polite, professional executive summary in your response text.\n`;
 
   if (userRole === "admin") {
     systemPrompt += `\n[AUTHORIZATION CLEARANCE: UNRESTRICTED ADMIN]: You have complete administrative authority to answer questions, generate files, and analyze documents across ALL departments (Finance, Tech, IT Support, Governance, Legal). You can ask and answer about anything without restriction.\n`;
@@ -536,7 +550,7 @@ export async function executeOpenAIChat({
     const response = await callOpenAIApi(
       "/chat/completions",
       {
-        model: "gpt-4o-mini",
+        model: getOpenAIModel(),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userContent },

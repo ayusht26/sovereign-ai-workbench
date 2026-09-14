@@ -1,6 +1,8 @@
 "use client";
 
 import { motion } from "motion/react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 function Sparkline({ tone = "orange" }: { tone?: "orange" | "green" }) {
   const stroke = tone === "orange" ? "var(--signal-orange)" : "var(--metric-green)";
@@ -25,16 +27,51 @@ function Sparkline({ tone = "orange" }: { tone?: "orange" | "green" }) {
   );
 }
 
-const tiles = [
-  { label: "Active model", value: "Qwen3.6-27B", tone: "orange" as const },
-  { label: "Tokens / sec", value: "148", tone: "green" as const },
-  { label: "Egress packets", value: "0", tone: "orange" as const },
-  { label: "Docs indexed", value: "12,480", tone: "green" as const },
-  { label: "Agent steps", value: "36", tone: "orange" as const },
-  { label: "Sandbox runs", value: "9", tone: "green" as const },
-];
-
 export function DashboardFrame() {
+  const [docCount, setDocCount] = useState<number>(58);
+  const [chunkCount, setChunkCount] = useState<number>(1447);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCorpusStats() {
+      try {
+        const { data, error } = await supabase.rpc("get_public_corpus_stats");
+        if (!error && data && isMounted) {
+          const stats = typeof data === "string" ? JSON.parse(data) : data;
+          if (typeof stats.documents === "number") {
+            setDocCount(stats.documents);
+          }
+          if (typeof stats.chunks === "number") {
+            setChunkCount(stats.chunks);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch live corpus stats:", err);
+      }
+    }
+
+    loadCorpusStats();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const tiles = [
+    { label: "Active model", value: "Qwen3.6-27B", tone: "orange" as const },
+    { label: "Tokens / sec", value: "148", tone: "green" as const },
+    { label: "Egress packets", value: "0", tone: "orange" as const },
+    {
+      label: "Docs indexed",
+      value: docCount.toLocaleString(),
+      subValue: `${chunkCount.toLocaleString()} chunks`,
+      tone: "green" as const,
+    },
+    { label: "Agent steps", value: "36", tone: "orange" as const },
+    { label: "Sandbox runs", value: "9", tone: "green" as const },
+  ];
+
   return (
     <div className="overflow-hidden rounded-[10px] border border-carbon-lift bg-[#0d0d0d]">
       <div className="flex items-center gap-3 border-b border-carbon-lift px-4 py-3">
@@ -50,9 +87,23 @@ export function DashboardFrame() {
 
       <div className="grid grid-cols-2 md:grid-cols-3">
         {tiles.map((t) => (
-          <div key={t.label} className="border-r border-b border-carbon-lift p-5">
-            <div className="eyebrow text-pale-stone">{t.label}</div>
-            <div className="mt-3 text-heading text-bone">{t.value}</div>
+          <div key={t.label} className="min-w-0 border-r border-b border-carbon-lift p-5">
+            <div className="eyebrow text-pale-stone truncate">{t.label}</div>
+            <div className="mt-3 flex items-baseline gap-2 overflow-hidden">
+              <span
+                className={`text-bone font-medium tracking-tight truncate ${
+                  t.value.length > 7 ? "text-xl md:text-[1.35rem]" : "text-heading"
+                }`}
+                title={t.value}
+              >
+                {t.value}
+              </span>
+              {"subValue" in t && t.subValue && (
+                <span className="font-mono text-caption text-warm-granite shrink-0">
+                  ({t.subValue})
+                </span>
+              )}
+            </div>
             <Sparkline tone={t.tone} />
           </div>
         ))}
